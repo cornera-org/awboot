@@ -6,13 +6,11 @@
 #include "sunxi_usart.h"
 #include "sunxi_sdhci.h"
 
-#define USART_DBG usart5_dbg
-
 #define CONFIG_BOOT_SPINAND
-#define CONFIG_BOOT_SDCARD
+// #define CONFIG_BOOT_SDCARD
 #define CONFIG_BOOT_MMC
 
-#define CONFIG_FATFS_CACHE_SIZE		 (CONFIG_DTB_LOAD_ADDR - SDRAM_BASE) // in bytes
+#define CONFIG_FATFS_CACHE_SIZE	 16 * 1024 // (unit: 512B sectors) needs to be bigger than both DTB + kernel
 #define CONFIG_SDMMC_SPEED_TEST_SIZE 1024 // (unit: 512B sectors)
 
 #define CONFIG_CPU_FREQ 1200000000
@@ -30,10 +28,11 @@
 #define CONFIG_SPINAND_KERNEL_ADDR (256 * 2048)
 
 extern dram_para_t	 ddr_param;
-extern sunxi_usart_t USART_DBG;
+extern const sunxi_usart_t usart_dbg;
+extern const sunxi_usart_t usart_mgmt;
 extern sunxi_spi_t	 sunxi_spi0;
 
-extern void board_init(void);
-extern int	board_sdhci_init(void);
+void board_init(void);
+void board_set_led(uint8_t num, uint8_t on);
 
 #endif

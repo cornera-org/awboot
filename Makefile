@@ -8,11 +8,12 @@ LOG_LEVEL ?= 30
 SRCS := main.c board.c lib/debug.c lib/xformat.c lib/fdt.c lib/string.c
 
 INCLUDE_DIRS :=-I . -I include -I lib
+LIB_DIR := -L ./
 LIBS := -lgcc -nostdlib
 DEFINES := -DLOG_LEVEL=$(LOG_LEVEL) -DBUILD_REVISION=$(shell cat .build_revision)
 
-include	arch/arch.mk
-include	lib/fatfs/fatfs.mk
+include arch/arch.mk
+include lib/fatfs/fatfs.mk
 
 CFLAGS += -mcpu=cortex-a7 -mthumb-interwork -mthumb -mno-unaligned-access -mfpu=neon-vfpv4 -mfloat-abi=hard
 CFLAGS += -ffast-math -ffunction-sections -fdata-sections -Os -std=gnu99 -Wall -Werror -Wno-unused-function -g -MMD $(INCLUDES) $(DEFINES)
@@ -52,7 +53,7 @@ git:
 
 build:: build_revision
 
-# $(1): varient name
+# $(1): variant name
 # $(2): values to remove from board.h
 define VARIENT =
 
@@ -68,12 +69,12 @@ build:: $$($(1)_OBJ_DIR)/$$(TARGET)-boot.elf $$($(1)_OBJ_DIR)/$$(TARGET)-boot.bi
 $$($(1)_OBJ_DIR)/$$(TARGET)-fel.elf: $$($(1)_OBJS)
 	echo "  LD    $$@"
 	$$(CC) -E -P -x c -D__RAM_BASE=0x00030000 ./arch/arm32/mach-t113s3/link.ld > $$($(1)_OBJ_DIR)/link-fel.ld
-	$$(CC) $$^ -o $$@ -T $$($(1)_OBJ_DIR)/link-fel.ld $$(LDFLAGS) -Wl,-Map,$$($(1)_OBJ_DIR)/$$(TARGET)-fel.map
+	$$(CC) $$^ -o $$@ $(LIB_DIR) -T $$($(1)_OBJ_DIR)/link-fel.ld $$(LDFLAGS) -Wl,-Map,$$($(1)_OBJ_DIR)/$$(TARGET)-fel.map
 
 $$($(1)_OBJ_DIR)/$$(TARGET)-boot.elf: $$($(1)_OBJS)
 	echo "  LD    $$@"
 	$$(CC) -E -P -x c -D__RAM_BASE=0x00020000 ./arch/arm32/mach-t113s3/link.ld > $$($(1)_OBJ_DIR)/link-boot.ld
-	$$(CC) $$^ -o $$@ -T $$($(1)_OBJ_DIR)/link-boot.ld $$(LDFLAGS) -Wl,-Map,$$($(1)_OBJ_DIR)/$$(TARGET)-boot.map
+	$$(CC) $$^ -o $$@ $(LIB_DIR) -T $$($(1)_OBJ_DIR)/link-boot.ld $$(LDFLAGS) -Wl,-Map,$$($(1)_OBJ_DIR)/$$(TARGET)-boot.map
 
 $$($(1)_OBJ_DIR)/$$(TARGET)-fel.bin: $$($(1)_OBJ_DIR)/$$(TARGET)-fel.elf
 	@echo OBJCOPY $$@
