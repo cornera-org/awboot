@@ -7,10 +7,10 @@
 #include "sdmmc.h"
 
 sunxi_usart_t usart_dbg = {
-	.base	 = 0x02501400,
-	.id		 = 5,
-	.gpio_tx = {GPIO_PIN(PORTB, 4), GPIO_PERIPH_MUX7},
-	.gpio_rx = {GPIO_PIN(PORTB, 5), GPIO_PERIPH_MUX7},
+	.base	 = 0x02500C00,
+	.id		 = 3,
+	.gpio_tx = {GPIO_PIN(PORTB, 6), GPIO_PERIPH_MUX7},
+	.gpio_rx = {GPIO_PIN(PORTB, 7), GPIO_PERIPH_MUX7},
 };
 
 sunxi_spi_t sunxi_spi0 = {
