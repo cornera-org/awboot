@@ -265,6 +265,8 @@ _boot:
 	}
 
 	info("booting linux...\r\n");
+	board_set_led(1, 0);
+	board_set_led(2, 0);
 
 	arm32_mmu_disable();
 	arm32_dcache_disable();

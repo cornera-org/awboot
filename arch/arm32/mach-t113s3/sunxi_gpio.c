@@ -49,12 +49,12 @@ static uint32_t _port_base_get(gpio_t pin)
 	return 0;
 }
 
-static inline uint32_t _pin_num(gpio_t pin)
+static inline uint32_t _pin_num(const gpio_t pin)
 {
 	return (pin & ((1 << PIO_NUM_IO_BITS) - 1));
 }
 
-void sunxi_gpio_init(gpio_t pin, int cfg)
+void sunxi_gpio_init(const gpio_t pin, int cfg)
 {
 	uint32_t port_addr = _port_base_get(pin);
 	uint32_t pin_num   = _pin_num(pin);
@@ -68,7 +68,7 @@ void sunxi_gpio_init(gpio_t pin, int cfg)
 	write32(addr, val);
 }
 
-void sunxi_gpio_set_value(gpio_t pin, int value)
+void sunxi_gpio_set_value(const gpio_t pin, int value)
 {
 	uint32_t port_addr = _port_base_get(pin);
 	uint32_t pin_num   = _pin_num(pin);
@@ -80,7 +80,7 @@ void sunxi_gpio_set_value(gpio_t pin, int value)
 	write32(port_addr + GPIO_DAT, val);
 }
 
-int sunxi_gpio_read(gpio_t pin)
+int sunxi_gpio_read(const gpio_t pin)
 {
 	uint32_t port_addr = _port_base_get(pin);
 	uint32_t pin_num   = _pin_num(pin);
@@ -90,7 +90,7 @@ int sunxi_gpio_read(gpio_t pin)
 	return !!(val & (1 << pin_num));
 }
 
-void sunxi_gpio_set_pull(gpio_t pin, enum gpio_pull_t pull)
+void sunxi_gpio_set_pull(const gpio_t pin, enum gpio_pull_t pull)
 {
 	uint32_t port_addr = _port_base_get(pin);
 	uint32_t pin_num   = _pin_num(pin);

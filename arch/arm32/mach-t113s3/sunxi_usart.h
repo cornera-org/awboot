@@ -11,7 +11,7 @@ typedef struct {
 	gpio_mux_t gpio_rx;
 } sunxi_usart_t;
 
-extern void sunxi_usart_init(sunxi_usart_t *usart);
+extern void sunxi_usart_init(const sunxi_usart_t *usart);
 extern void sunxi_usart_putc(void *arg, char c);
 
 #endif

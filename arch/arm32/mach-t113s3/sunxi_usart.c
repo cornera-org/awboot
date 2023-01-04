@@ -4,7 +4,7 @@
 #include "sunxi_usart.h"
 #include "reg-ccu.h"
 
-void sunxi_usart_init(sunxi_usart_t *usart)
+void sunxi_usart_init(const sunxi_usart_t *usart)
 {
 	uint32_t addr;
 	uint32_t val;
