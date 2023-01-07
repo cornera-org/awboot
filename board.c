@@ -6,7 +6,6 @@
 #include "sunxi_spi.h"
 #include "sdmmc.h"
 
-
 #define UART_BASE(id) ((uint32_t)(0x02500000 + (0x400 * (id))))
 
 const sunxi_usart_t usart_dbg = {
@@ -26,7 +25,7 @@ const sunxi_usart_t usart_mgmt = {
 sunxi_spi_t sunxi_spi0 = {
 	.base	   = 0x04025000,
 	.id		   = 0,
-	.clk_rate  = 100 * 1000 * 1000,
+	.clk_rate  = 25 * 1000 * 1000,
 	.gpio_cs   = {GPIO_PIN(PORTC, 3), GPIO_PERIPH_MUX2},
 	.gpio_sck  = {GPIO_PIN(PORTC, 2), GPIO_PERIPH_MUX2},
 	.gpio_mosi = {GPIO_PIN(PORTC, 4), GPIO_PERIPH_MUX2},
@@ -54,7 +53,14 @@ sdhci_t sdhci0 = {
 static const gpio_t led1 = GPIO_PIN(PORTD, 19);
 static const gpio_t led2 = GPIO_PIN(PORTB, 5);
 static const gpio_t hold = GPIO_PIN(PORTC, 7);
+static const gpio_t bus1 = GPIO_PIN(PORTD, 18);
+static const gpio_t bus2 = GPIO_PIN(PORTD, 15);
 
+static void output_init(const gpio_t gpio)
+{
+	sunxi_gpio_init(gpio, GPIO_OUTPUT);
+	sunxi_gpio_set_value(gpio, 0);
+}
 void board_set_led(uint8_t num, uint8_t on)
 {
 	switch (num) {
@@ -71,9 +77,12 @@ void board_set_led(uint8_t num, uint8_t on)
 
 void board_init()
 {
-	sunxi_gpio_init(led1, GPIO_OUTPUT);
-	sunxi_gpio_init(led2, GPIO_OUTPUT);
-	sunxi_gpio_init(hold, GPIO_OUTPUT);
+	output_init(led1);
+	output_init(led2);
+	output_init(bus1);
+	output_init(bus2);
+	sunxi_gpio_set_value(bus1, 1);
+	sunxi_gpio_set_value(bus2, 1);
 	board_set_led(1, 1);
 	board_set_led(2, 1);
 	sunxi_gpio_set_value(hold, 1);
