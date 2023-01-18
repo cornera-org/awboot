@@ -687,7 +687,7 @@ static void mctl_phy_ac_remapping(dram_para_t *para)
 		return;
 
 	fuse = (readl(SUNXI_SID_BASE + 0x28) & 0xf00) >> 8;
-	debug("DDR efuse: 0x%x\r\n", fuse);
+	trace("DDR efuse: 0x%x\r\n", fuse);
 
 	if (para->dram_type == SUNXI_DRAM_TYPE_DDR2) {
 		if (fuse == 15)
@@ -949,7 +949,7 @@ static int dqs_gate_detect(dram_para_t *para)
 
 	if ((readl(MCTL_PHY_BASE + MCTL_PHY_PGSR0) & BIT(22)) == 0) {
 		para->dram_para2 = (para->dram_para2 & ~0xf) | BIT(12);
-		debug("dual rank and full DQ\r\n");
+		trace("dual rank and full DQ\r\n");
 
 		return 1;
 	}
@@ -957,7 +957,7 @@ static int dqs_gate_detect(dram_para_t *para)
 	dx0 = (readl(MCTL_PHY_BASE + MCTL_PHY_DXnGSR0(0)) & 0x3000000) >> 24;
 	if (dx0 == 0) {
 		para->dram_para2 = (para->dram_para2 & ~0xf) | 0x1001;
-		debug("dual rank and half DQ\r\n");
+		trace("dual rank and half DQ\r\n");
 
 		return 1;
 	}
@@ -966,10 +966,10 @@ static int dqs_gate_detect(dram_para_t *para)
 		dx1 = (readl(MCTL_PHY_BASE + MCTL_PHY_DXnGSR0(1)) & 0x3000000) >> 24;
 		if (dx1 == 2) {
 			para->dram_para2 = para->dram_para2 & ~0xf00f;
-			debug("single rank and full DQ\r\n");
+			trace("single rank and full DQ\r\n");
 		} else {
 			para->dram_para2 = (para->dram_para2 & ~0xf00f) | BIT(0);
-			debug("single rank and half DQ\r\n");
+			trace("single rank and half DQ\r\n");
 		}
 
 		return 1;
@@ -978,8 +978,8 @@ static int dqs_gate_detect(dram_para_t *para)
 	if ((para->dram_tpr13 & BIT(29)) == 0)
 		return 0;
 
-	debug("DX0 state: %d\r\n", dx0);
-	debug("DX1 state: %d\r\n", dx1);
+	trace("DX0 state: %d\r\n", dx0);
+	trace("DX1 state: %d\r\n", dx1);
 
 	return 0;
 }
@@ -1103,7 +1103,7 @@ static int auto_scan_dram_size(dram_para_t *para)
 		}
 		if (i > 16)
 			i = 16;
-		debug("rank %d row = %d\r\n", rank, i);
+		trace("rank %d row = %d\r\n", rank, i);
 
 		/* Store rows in para 1 */
 		shft = offs + 4;
@@ -1131,7 +1131,7 @@ static int auto_scan_dram_size(dram_para_t *para)
 			chk += 4;
 		}
 
-		debug("rank %d bank = %d\r\n", rank, (j + 1) << 2); /* 4 or 8 */
+		trace("rank %d bank = %d\r\n", rank, (j + 1) << 2); /* 4 or 8 */
 
 		/* Store banks in para 1 */
 		shft = 12 + offs;
@@ -1164,7 +1164,7 @@ static int auto_scan_dram_size(dram_para_t *para)
 			i = 13;
 
 		unsigned int pgsize = (i == 9) ? 0 : (1 << (i - 10));
-		debug("rank %d page size = %d KB\r\n", rank, pgsize);
+		trace("rank %d page size = %d KB\r\n", rank, pgsize);
 
 		/* Store page size */
 		shft = offs;
@@ -1192,10 +1192,10 @@ static int auto_scan_dram_size(dram_para_t *para)
 		para->dram_para2 &= 0xfffff0ff;
 		/* note: rval is equal to para->dram_para1 here */
 		if ((rval & 0xffff) == (rval >> 16)) {
-			debug("rank1 config same as rank0\r\n");
+			trace("rank1 config same as rank0\r\n");
 		} else {
 			para->dram_para2 |= (1 << 8);
-			debug("rank1 config different from rank0\r\n");
+			trace("rank1 config different from rank0\r\n");
 		}
 	}
 
@@ -1261,17 +1261,17 @@ int init_DRAM(int type, dram_para_t *para)
 {
 	u32 rc, mem_size_mb;
 
-	debug("DRAM BOOT DRIVE INFO: %s\r\n", "V0.24");
+	trace("DRAM BOOT DRIVE INFO: %s\r\n", "V0.24");
 	debug("DRAM CLK = %d MHz\r\n", para->dram_clk);
-	debug("DRAM Type = %d (2:DDR2,3:DDR3)\r\n", para->dram_type);
+	trace("DRAM Type = %d (2:DDR2,3:DDR3)\r\n", para->dram_type);
 	if ((para->dram_odt_en & 0x1) == 0)
-		debug("DRAMC read ODT off\r\n");
+		trace("DRAMC read ODT off\r\n");
 	else
-		debug("DRAMC ZQ value: 0x%x\r\n", para->dram_zq);
+		trace("DRAMC ZQ value: 0x%x\r\n", para->dram_zq);
 
 	/* Test ZQ status */
 	if (para->dram_tpr13 & (1 << 16)) {
-		debug("DRAM only have internal ZQ\r\n");
+		trace("DRAM only have internal ZQ\r\n");
 		setbits_le32((SYS_CONTROL_REG_BASE + ZQ_CAL_CTRL_REG), (1 << 8));
 		writel(0, (SYS_CONTROL_REG_BASE + ZQ_RES_CTRL_REG));
 		udelay(10);
@@ -1283,7 +1283,7 @@ int init_DRAM(int type, dram_para_t *para)
 		udelay(10);
 		setbits_le32((SYS_CONTROL_REG_BASE + ZQ_CAL_CTRL_REG), (1 << 0));
 		udelay(20);
-		debug("ZQ value = 0x%x\r\n", readl((SYS_CONTROL_REG_BASE + ZQ_RES_STATUS_REG)));
+		trace("ZQ value = 0x%x\r\n", readl((SYS_CONTROL_REG_BASE + ZQ_RES_STATUS_REG)));
 	}
 
 	dram_voltage_set(para);
@@ -1299,13 +1299,13 @@ int init_DRAM(int type, dram_para_t *para)
 	/* report ODT */
 	rc = para->dram_mr1;
 	if ((rc & 0x44) == 0)
-		debug("DRAM ODT off\r\n");
+		trace("DRAM ODT off\r\n");
 	else
-		debug("DRAM ODT value: 0x%x\r\n", rc);
+		trace("DRAM ODT value: 0x%x\r\n", rc);
 
 	/* Init core, final run */
 	if (mctl_core_init(para) == 0) {
-		debug("DRAM initialisation error: 1\r\n");
+		warning("DRAM initialisation error: 1\r\n");
 		return 0;
 	}
 
@@ -1318,7 +1318,7 @@ int init_DRAM(int type, dram_para_t *para)
 		rc = (rc >> 16) & ~(1 << 15);
 	} else {
 		rc = DRAMC_get_dram_size();
-		debug("DRAM: size = %dMB\r\n", rc);
+		info("DRAM: size = %dMB\r\n", rc);
 		para->dram_para2 = (para->dram_para2 & 0xffffU) | rc << 16;
 	}
 	mem_size_mb = rc;
@@ -1331,7 +1331,7 @@ int init_DRAM(int type, dram_para_t *para)
 		writel(rc, (MCTL_PHY_BASE + MCTL_PHY_ASRTC));
 		writel(0x40a, (MCTL_PHY_BASE + MCTL_PHY_ASRC));
 		setbits_le32((MCTL_PHY_BASE + MCTL_PHY_PWRCTL), (1 << 0));
-		debug("Enable Auto SR\r\n");
+		trace("Enable Auto SR\r\n");
 	} else {
 		clrbits_le32((MCTL_PHY_BASE + MCTL_PHY_ASRTC), 0xffff);
 		clrbits_le32((MCTL_PHY_BASE + MCTL_PHY_PWRCTL), 0x1);
