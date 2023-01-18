@@ -44,13 +44,40 @@ void sunxi_usart_init(const sunxi_usart_t *usart)
 	write32(addr + 0x0c, val);
 }
 
+#define UART_RBR 0x00
+#define UART_THR 0x00
+#define UART_USR 0x7c
+
+#define UART_USR_BUSY (0x1 << 0)
+#define UART_USR_TFNF (0x1 << 1)
+#define UART_USR_TFE  (0x1 << 2)
+#define UART_USR_RFNE (0x1 << 3)
+#define UART_USR_RFF  (0x1 << 4)
+
 void sunxi_usart_putc(void *arg, char c)
 {
 	sunxi_usart_t *usart = (sunxi_usart_t *)arg;
 
-	while ((read32(usart->base + 0x7c) & (0x1 << 1)) == 0)
+	while ((read32(usart->base + UART_USR) & UART_USR_TFNF) == 0)
 		;
-	write32(usart->base + 0x00, c);
-	while ((read32(usart->base + 0x7c) & (0x1 << 0)) == 1)
+	write32(usart->base + UART_THR, c);
+	while ((read32(usart->base + UART_USR) & UART_USR_BUSY) == 1)
 		;
+}
+
+void sunxi_usart_put(sunxi_usart_t *usart, char *in, uint32_t len)
+{
+	while (len--) {
+		sunxi_usart_putc(usart, *in);
+		in++;
+	}
+}
+
+void sunxi_usart_get(sunxi_usart_t *usart, char *out, uint32_t len)
+{
+	while (len--) {
+		while ((read32(usart->base + UART_USR) & UART_USR_RFNE) == 0) {
+		};
+		*out++ = read32(usart->base + UART_RBR) & 0xff;
+	}
 }
