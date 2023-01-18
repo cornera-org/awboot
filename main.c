@@ -12,6 +12,7 @@
 #include "debug.h"
 #include "board.h"
 #include "barrier.h"
+#include "mgmt.h"
 
 image_info_t image;
 extern u32	 _start;
@@ -32,19 +33,7 @@ typedef struct {
 	unsigned int end;
 } linux_zimage_header_t;
 
-static int boot_image_setup(unsigned char *addr, unsigned int *entry)
-{
-	linux_zimage_header_t *zimage_header = (linux_zimage_header_t *)addr;
-
-	if (zimage_header->magic == LINUX_ZIMAGE_MAGIC) {
-		*entry = ((unsigned int)addr + zimage_header->start);
-		return 0;
-	}
-
-	error("unsupported kernel image\r\n");
-
-	return -1;
-}
+uint8_t uartbuf[40];
 
 #if defined(CONFIG_BOOT_SDCARD) || defined(CONFIG_BOOT_MMC)
 #define CHUNK_SIZE 0x20000
@@ -144,6 +133,7 @@ static int load_sdcard(image_info_t *image)
 
 #endif
 
+#ifdef CONFIG_BOOT_SPINAND
 int load_spi_nand(sunxi_spi_t *spi, image_info_t *image)
 {
 	linux_zimage_header_t *hdr;
@@ -185,6 +175,21 @@ int load_spi_nand(sunxi_spi_t *spi, image_info_t *image)
 
 	return 0;
 }
+#endif
+
+static int boot_image_setup(unsigned char *addr, unsigned int *entry)
+{
+	linux_zimage_header_t *zimage_header = (linux_zimage_header_t *)addr;
+
+	if (zimage_header->magic == LINUX_ZIMAGE_MAGIC) {
+		*entry = ((unsigned int)addr + zimage_header->start);
+		return 0;
+	}
+
+	error("unsupported kernel image\r\n");
+
+	return -1;
+}
 
 int main(void)
 {
@@ -202,6 +207,9 @@ int main(void)
 #ifdef CONFIG_ENABLE_CPU_FREQ_DUMP
 	sunxi_clk_dump();
 #endif
+
+	sunxi_usart_put(&usart_mgmt, uartbuf, 2);
+	// mgmt_get_time(&usart_mgmt, uartbuf);
 
 	memset(&image, 0, sizeof(image_info_t));
 
@@ -262,6 +270,12 @@ _spi:
 _boot:
 	if (boot_image_setup((unsigned char *)image.dest, &entry_point)) {
 		fatal("boot setup failed\r\n");
+	}
+
+	uint8_t slot = mgmt_get_slot(&usart_mgmt, uartbuf);
+	warning("MGMT: boot slot %u\r\n", slot);
+	if (mgmt_boot(&usart_mgmt, uartbuf) != 0) {
+		warning("MGMT: boot command error\r\n");
 	}
 
 	info("booting linux...\r\n");
