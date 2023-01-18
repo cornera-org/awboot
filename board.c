@@ -8,14 +8,14 @@
 
 #define UART_BASE(id) ((uint32_t)(0x02500000 + (0x400 * (id))))
 
-const sunxi_usart_t usart_dbg = {
+sunxi_usart_t usart_dbg = {
 	.base	 = UART_BASE(3),
 	.id		 = 3,
 	.gpio_tx = {GPIO_PIN(PORTB, 6), GPIO_PERIPH_MUX7},
 	.gpio_rx = {GPIO_PIN(PORTB, 7), GPIO_PERIPH_MUX7},
 };
 
-const sunxi_usart_t usart_mgmt = {
+sunxi_usart_t usart_mgmt = {
 	.base	 = UART_BASE(5),
 	.id		 = 5,
 	.gpio_tx = {GPIO_PIN(PORTD, 5), GPIO_PERIPH_MUX5},
@@ -81,11 +81,11 @@ void board_init()
 	output_init(led2);
 	output_init(bus1);
 	output_init(bus2);
-	sunxi_gpio_set_value(bus1, 1);
-	sunxi_gpio_set_value(bus2, 1);
+	// sunxi_gpio_set_value(bus1, 1);
+	// sunxi_gpio_set_value(bus2, 1);
 	board_set_led(1, 1);
 	board_set_led(2, 1);
-	sunxi_gpio_set_value(hold, 1);
 	sunxi_usart_init(&usart_dbg);
 	sunxi_usart_init(&usart_mgmt);
+	// rtc_init();
 }

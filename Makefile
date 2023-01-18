@@ -5,7 +5,7 @@ CROSS_COMPILE ?= arm-none-eabi
 # Log level defaults to info
 LOG_LEVEL ?= 30
 
-SRCS := main.c board.c lib/debug.c lib/xformat.c lib/fdt.c lib/string.c
+SRCS := main.c board.c lib/debug.c lib/xformat.c lib/fdt.c lib/string.c lib/mgmt.c
 
 INCLUDE_DIRS :=-I . -I include -I lib
 LIB_DIR := -L ./
@@ -130,6 +130,7 @@ format:
 tools:
 	$(MAKE) -C tools all
 
+
 mkboot: build tools
 	echo "SPI:"
 	$(SIZE) build-spi/$(TARGET)-boot.elf
@@ -147,7 +148,7 @@ mkboot: build tools
 	$(SIZE) build-all/$(TARGET)-boot.elf
 	cp -f build-all/$(TARGET)-boot.bin $(TARGET)-boot-all.bin
 	cp -f build-all/$(TARGET)-boot.bin $(TARGET)-fel.bin
-	tools/mksunxi $(TARGET)-fel.bin 8192
+	tools/mksunxi $(TARGET)-fel.bin 512
 	tools/mksunxi $(TARGET)-boot-all.bin 8192
 
 spi-boot.img: mkboot
@@ -157,3 +158,7 @@ spi-boot.img: mkboot
 	dd if=$(TARGET)-boot-spi.bin of=spi-boot.img bs=2k seek=64 # Third copy on page 64
 	# dd if=linux/boot/$(DTB) of=spi-boot.img bs=2k seek=128 # DTB on page 128
 	# dd if=linux/boot/$(KERNEL) of=spi-boot.img bs=2k seek=256 # Kernel on page 256
+
+boot-fel:
+	xfel write 0x30000 awboot-fel.bin
+	xfel exec  0x30000
