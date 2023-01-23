@@ -64,8 +64,8 @@ uint32_t crc32(uint32_t crc, const uint8_t *buf, uint32_t len)
 
 static void mgmt_write(sunxi_usart_t *usart, mgmt_packet_t *request)
 {
-	request->crc = crc32(CRC32_INITIAL, (char *)request, sizeof(mgmt_packet_t) - sizeof(request->crc));
-	sunxi_usart_put(usart, (char *)request, sizeof(mgmt_packet_t));
+	request->crc = crc32(CRC32_INITIAL, (uint8_t *)request, sizeof(mgmt_packet_t) - sizeof(request->crc));
+	sunxi_usart_put(usart, (char *)request, (uint32_t)sizeof(mgmt_packet_t));
 }
 
 static uint8_t mgmt_read(sunxi_usart_t *usart, mgmt_packet_t *response)
@@ -74,12 +74,12 @@ static uint8_t mgmt_read(sunxi_usart_t *usart, mgmt_packet_t *response)
 	uint32_t crc;
 	uint8_t *pbuf = (uint8_t *)response;
 	while (response->magic != MAGIC_RES) {
-		sunxi_usart_get(usart, pbuf, 1);
+		sunxi_usart_get(usart, (char *)pbuf, 1);
 		if (pbuf[0] == (uint8_t)(MAGIC_RES & 0xff)) {
-			sunxi_usart_get(usart, pbuf + 1, 1);
+			sunxi_usart_get(usart, (char *)pbuf + 1, 1);
 		}
 	}
-	sunxi_usart_get(usart, pbuf + 2, sizeof(mgmt_packet_t) - 2);
+	sunxi_usart_get(usart, (char *)pbuf + 2, sizeof(mgmt_packet_t) - 2);
 	crc = crc32(CRC32_INITIAL, (uint8_t *)response, sizeof(mgmt_packet_t) - sizeof(response->crc));
 	if (response->crc != crc) {
 		warning("MGMT: response CRC invalid %x %x\r\n", response->crc, crc);
@@ -152,6 +152,9 @@ uint8_t mgmt_get_slot(sunxi_usart_t *usart, uint8_t *buf)
 			debug("MGMT:   Slot %u - %u tries\r\n", s[i].number, s[i].retries);
 		}
 	}
+
+  if (active > 2)
+    active = 2;
 
 	return active;
 }
