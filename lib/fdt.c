@@ -1,32 +1,9 @@
-/* ----------------------------------------------------------------------------
- *         ATMEL Microcontroller Software Support
- * ----------------------------------------------------------------------------
- * Copyright (c) 2012, Atmel Corporation
- *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the disclaimer below.
- *
- * Atmel's name may not be used to endorse or promote products derived from
- * this software without specific prior written permission.
- *
- * DISCLAIMER: THIS SOFTWARE IS PROVIDED BY ATMEL "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT ARE
- * DISCLAIMED. IN NO EVENT SHALL ATMEL BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
- * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+// Copyright (C) 2012 Microchip Technology Inc. and its subsidiaries
+//
+// SPDX-License-Identifier: MIT
 
 #include "main.h"
+#include "string.h"
 #include "fdt.h"
 #include "debug.h"
 
@@ -36,7 +13,15 @@
 #define OF_DT_TOKEN_NOP		   0x00000004
 #define OF_DT_END			   0x00000009
 
-inline unsigned int of_get_magic_number(void *blob)
+static int _memcpy(void *dst, const void *src, size_t len)
+{
+	unsigned char		  *cdst = dst;
+	const unsigned char *csrc = src;
+  while (len--) 
+		*cdst++ = *csrc++;
+}
+
+static inline unsigned int of_get_magic_number(void *blob)
 {
 	boot_param_header_t *header = (boot_param_header_t *)blob;
 
@@ -81,7 +66,7 @@ static inline unsigned int of_dt_struct_offset(void *blob, unsigned int offset)
 	return (unsigned int)blob + of_get_offset_dt_struct(blob) + offset;
 }
 
-unsigned int of_get_dt_total_size(void *blob)
+unsigned int fdt_get_total_size(void *blob)
 {
 	boot_param_header_t *header = (boot_param_header_t *)blob;
 
@@ -128,75 +113,67 @@ static inline int of_blob_data_size(void *blob)
 	return (unsigned int)of_get_offset_dt_strings(blob) + of_get_dt_strings_len(blob);
 }
 
-#if 0
-
 /* -------------------------------------------------------- */
 
 /* return the token and the next token offset
  */
-static int of_get_token_nextoffset(void *blob,
-				int startoffset,
-				int *nextoffset,
-				unsigned int *token)
+static int of_get_token_nextoffset(void *blob, int startoffset, int *nextoffset, unsigned int *token)
 {
 	const unsigned int *p, *plen;
-	unsigned int tag;
-	const char *cell;
-	unsigned int offset = startoffset;
+	unsigned int		tag;
+	const char		   *cell;
+	unsigned int		offset = startoffset;
 
 	*nextoffset = -1;
 
 	if (offset % 4) {
-		debug("DT: the token offset is not aligned\n");
+		debug("DT: the token offset is not aligned\r\n");
 		return -1;
 	}
 
 	/* Get the token */
-	p = (unsigned int *)of_dt_struct_offset(blob, offset);
+	p	= (unsigned int *)of_dt_struct_offset(blob, offset);
 	tag = swap_uint32(*p);
 
 	/* to get offset for the next token */
 	offset += 4;
-	if (tag  == OF_DT_TOKEN_NODE_BEGIN) {
+	if (tag == OF_DT_TOKEN_NODE_BEGIN) {
 		/* node name */
 		cell = (char *)of_dt_struct_offset(blob, offset);
 		do {
 			cell++;
 			offset++;
 		} while (*cell != '\0');
+		/* the \0 is part of the node name, hence offset must be updated to the
+		 * position past the \0.
+		 */
+		++offset;
 	} else if (tag == OF_DT_TOKEN_PROP) {
 		/* the property value size */
 		plen = (unsigned int *)of_dt_struct_offset(blob, offset);
 		/* name offset + value size + value */
 		offset += swap_uint32(*plen) + 8;
-	} else if ((tag != OF_DT_TOKEN_NODE_END)
-			&& (tag != OF_DT_TOKEN_NOP)
-			&& (tag != OF_DT_END))
+	} else if ((tag != OF_DT_TOKEN_NODE_END) && (tag != OF_DT_TOKEN_NOP) && (tag != OF_DT_END))
 		return -1;
 
 	*nextoffset = OF_ALIGN(offset);
-	*token = tag;
+	*token		= tag;
 
 	return 0;
 }
 
-static int of_get_nextnode_offset(void *blob,
-				int start_offset,
-				int *offset,
-				int *nextoffset,
-				int *depth)
+static int of_get_nextnode_offset(void *blob, int start_offset, int *offset, int *nextoffset, int *depth)
 {
-	int next_offset = 0;
-	int nodeoffset = start_offset;
+	int			 next_offset = 0;
+	int			 nodeoffset	 = start_offset;
 	unsigned int token;
-	int ret;
+	int			 ret;
 
 	if (!offset || !nextoffset || !depth)
 		return -1;
 
-	while(1) {
-		ret = of_get_token_nextoffset(blob, nodeoffset,
-						&next_offset, &token);
+	while (1) {
+		ret = of_get_token_nextoffset(blob, nodeoffset, &next_offset, &token);
 		if (ret)
 			return ret;
 
@@ -208,8 +185,7 @@ static int of_get_nextnode_offset(void *blob,
 		} else {
 			nodeoffset = next_offset;
 
-			if ((token == OF_DT_TOKEN_PROP)
-				|| (token == OF_DT_TOKEN_NOP))
+			if ((token == OF_DT_TOKEN_PROP) || (token == OF_DT_TOKEN_NOP))
 				continue;
 			else if (token == OF_DT_TOKEN_NODE_END) {
 				(*depth)--;
@@ -221,22 +197,22 @@ static int of_get_nextnode_offset(void *blob,
 		}
 	};
 
-	*offset = nodeoffset;
+	*offset		= nodeoffset;
 	*nextoffset = next_offset;
 
 	return 0;
 }
 
-static int of_get_node_offset(void *blob, char *name, int *offset)
+static int of_get_node_offset(void *blob, const char *name, int *offset)
 {
-	int start_offset = 0;
-	int nodeoffset = 0;
-	int nextoffset = 0;
-	int depth = 0;
+	int			 start_offset = 0;
+	int			 nodeoffset	  = 0;
+	int			 nextoffset	  = 0;
+	int			 depth		  = 0;
 	unsigned int token;
 	unsigned int namelen = strlen(name);
-	char *nodename;
-	int ret;
+	char		 *nodename;
+	int			 ret;
 
 	/* find the root node*/
 	ret = of_get_token_nextoffset(blob, 0, &start_offset, &token);
@@ -244,17 +220,15 @@ static int of_get_node_offset(void *blob, char *name, int *offset)
 		return -1;
 
 	while (1) {
-		ret = of_get_nextnode_offset(blob, start_offset,
-					&nodeoffset, &nextoffset, &depth);
+		ret = of_get_nextnode_offset(blob, start_offset, &nodeoffset, &nextoffset, &depth);
 		if (ret)
 			return ret;
 
 		if (depth < 0)
 			return -1;
 
-		nodename = (char *)of_dt_struct_offset(blob,(nodeoffset + 4));
-		if ((memcmp(nodename, name, namelen) == 0)
-			&& (nodename[namelen] == '\0'))
+		nodename = (char *)of_dt_struct_offset(blob, (nodeoffset + 4));
+		if ((memcmp(nodename, name, namelen) == 0) && ((nodename[namelen] == '\0') || (nodename[namelen] == '@')))
 			break;
 
 		start_offset = nextoffset;
@@ -267,18 +241,14 @@ static int of_get_node_offset(void *blob, char *name, int *offset)
 
 /* -------------------------------------------------------- */
 
-static int of_blob_move_dt_struct(void *blob,
-					void *point,
-					int oldlen,
-					int newlen)
+static int of_blob_move_dt_struct(void *blob, void *point, int oldlen, int newlen)
 {
-	void *dest = point + newlen;
-	void *src = point + oldlen;
-	unsigned int len = (char *)blob + of_blob_data_size(blob)
-					- (char *)point - oldlen;
+	void		 *dest = point + newlen;
+	void		 *src  = point + oldlen;
+	unsigned int len  = (char *)blob + of_blob_data_size(blob) - (char *)point - oldlen;
 
-	int delta = newlen - oldlen;
-	unsigned int structlen = of_get_dt_struct_len(blob) + delta;
+	int			 delta		   = newlen - oldlen;
+	unsigned int structlen	   = of_get_dt_struct_len(blob) + delta;
 	unsigned int stringsoffset = of_get_offset_dt_strings(blob) + delta;
 
 	memmove(dest, src, len);
@@ -287,49 +257,42 @@ static int of_blob_move_dt_struct(void *blob,
 	of_set_offset_dt_strings(blob, stringsoffset);
 
 	if (delta > 0)
-		of_set_dt_total_size(blob, of_get_dt_total_size(blob) + delta);
+		of_set_dt_total_size(blob, fdt_get_total_size(blob) + delta);
 
 	return 0;
 }
 
 static int of_blob_move_dt_string(void *blob, int newlen)
 {
-	void *point = (void *)((unsigned int)blob
-				+ of_get_offset_dt_strings(blob)
-				+ of_get_dt_strings_len(blob));
+	void *point = (void *)((unsigned int)blob + of_get_offset_dt_strings(blob) + of_get_dt_strings_len(blob));
 
-	void *dest = point + newlen;
-	unsigned int len = (char *)blob + of_blob_data_size(blob)
-					- (char *)point;
+	void		 *dest		= point + newlen;
+	unsigned int len		= (char *)blob + of_blob_data_size(blob) - (char *)point;
 	unsigned int stringslen = of_get_dt_strings_len(blob) + newlen;
 
 	memmove(dest, point, len);
 
 	of_set_dt_strings_len(blob, stringslen);
-	of_set_dt_total_size(blob, of_get_dt_total_size(blob) + newlen);
+	of_set_dt_total_size(blob, fdt_get_total_size(blob) + newlen);
 
 	return 0;
 }
 
-static int of_get_next_property_offset(void *blob,
-				int startoffset,
-				int *offset,
-				int *nextproperty)
+static int of_get_next_property_offset(void *blob, int startoffset, int *offset, int *nextproperty)
 {
 	unsigned int token;
-	int nextoffset;
-	int ret = -1;
+	int			 nextoffset;
+	int			 ret = -1;
 
 	while (1) {
-		ret = of_get_token_nextoffset(blob, startoffset,
-						&nextoffset, &token);
+		ret = of_get_token_nextoffset(blob, startoffset, &nextoffset, &token);
 		if (ret)
 			break;
 
 		if (token == OF_DT_TOKEN_PROP) {
-			*offset = startoffset;
+			*offset		  = startoffset;
 			*nextproperty = nextoffset;
-			ret = 0;
+			ret			  = 0;
 			break;
 		} else if (token == OF_DT_TOKEN_NOP)
 			continue;
@@ -344,34 +307,28 @@ static int of_get_next_property_offset(void *blob,
 	return ret;
 }
 
-static int of_get_property_offset_by_name(void *blob,
-					unsigned int nodeoffset,
-					char *name,
-					int *offset)
+static int of_get_property_offset_by_name(void *blob, unsigned int nodeoffset, const char *name, int *offset)
 {
-	unsigned int nameoffset;
+	unsigned int  nameoffset;
 	unsigned int *p;
-	unsigned int namelen = strlen(name);
-	int startoffset = nodeoffset;
-	int property_offset = 0;
-	int nextoffset = 0;
-	char *string;
-	int ret;
+	unsigned int  namelen		  = strlen(name);
+	int			  startoffset	  = nodeoffset;
+	int			  property_offset = 0;
+	int			  nextoffset	  = 0;
+	char		 *string;
+	int			  ret;
 
 	*offset = 0;
 
 	while (1) {
-		ret = of_get_next_property_offset(blob, startoffset,
-					&property_offset, &nextoffset);
+		ret = of_get_next_property_offset(blob, startoffset, &property_offset, &nextoffset);
 		if (ret)
 			return ret;
 
-		p = (unsigned int *)of_dt_struct_offset(blob,
-						property_offset + 8);
+		p		   = (unsigned int *)of_dt_struct_offset(blob, property_offset + 8);
 		nameoffset = swap_uint32(*p);
-		string = of_get_string_by_offset(blob, nameoffset);
-		if ((strlen(string) == namelen)
-			&& (memcmp(string, name, namelen) == 0)) {
+		string	   = of_get_string_by_offset(blob, nameoffset);
+		if ((strlen(string) == namelen) && (memcmp(string, name, namelen) == 0)) {
 			*offset = property_offset;
 			return 0;
 		}
@@ -381,14 +338,12 @@ static int of_get_property_offset_by_name(void *blob,
 	return -1;
 }
 
-static int of_string_is_find_strings_blob(void *blob,
-				const char *string,
-				int *offset)
+static int of_string_is_find_strings_blob(void *blob, const char *string, int *offset)
 {
-	char *dt_strings = (char *)blob + of_get_offset_dt_strings(blob);
-	int dt_stringslen = of_get_dt_strings_len(blob);
-	int len = strlen(string) + 1;
-	char *lastpoint = dt_strings + dt_stringslen - len;
+	char *dt_strings	= (char *)blob + of_get_offset_dt_strings(blob);
+	int	  dt_stringslen = of_get_dt_strings_len(blob);
+	int	  len			= strlen(string) + 1;
+	char *lastpoint		= dt_strings + dt_stringslen - len;
 	char *p;
 
 	for (p = dt_strings; p <= lastpoint; p++) {
@@ -401,56 +356,48 @@ static int of_string_is_find_strings_blob(void *blob,
 	return -1;
 }
 
-static int of_add_string_strings_blob(void *blob,
-			const char *string,
-			int *name_offset)
+static int of_add_string_strings_blob(void *blob, const char *string, int *name_offset)
 {
-	char *dt_strings = (char *)blob + of_get_offset_dt_strings(blob);
-	int dt_stringslen = of_get_dt_strings_len(blob);
+	char *dt_strings	= (char *)blob + of_get_offset_dt_strings(blob);
+	int	  dt_stringslen = of_get_dt_strings_len(blob);
 	char *new_string;
-	int len = strlen(string) + 1;
-	int ret;
+	int	  len = strlen(string) + 1;
+	int	  ret;
 
 	new_string = dt_strings + dt_stringslen;
-	ret = of_blob_move_dt_string(blob, len);
+	ret		   = of_blob_move_dt_string(blob, len);
 	if (ret)
 		return ret;
 
-	memcpy(new_string, string, len);
+	_memcpy(new_string, string, len);
 
 	*name_offset = new_string - dt_strings;
 
 	return 0;
 }
 
-static int of_add_property(void *blob,
-				int nextoffset,
-				const char *property_name,
-				const void *value,
-				int valuelen)
+static int of_add_property(void *blob, int nextoffset, const char *property_name, const void *value, int valuelen)
 {
-	int string_offset;
+	int			  string_offset;
 	unsigned int *p;
-	unsigned int addr;
-	int len;
-	int ret;
+	unsigned int  addr;
+	int			  len;
+	int			  ret;
 
 	/* check if the property name in the dt_strings,
 	 * else add the string in dt strings
 	 */
-	ret = of_string_is_find_strings_blob(blob,
-				property_name, &string_offset);
+	ret = of_string_is_find_strings_blob(blob, property_name, &string_offset);
 	if (ret) {
-		ret = of_add_string_strings_blob(blob,
-				property_name, &string_offset);
+		ret = of_add_string_strings_blob(blob, property_name, &string_offset);
 		if (ret)
 			return ret;
 	}
 
 	/* add the property node in dt struct */
-	len = 12 + OF_ALIGN(valuelen);
+	len	 = 12 + OF_ALIGN(valuelen);
 	addr = of_dt_struct_offset(blob, nextoffset);
-	ret = of_blob_move_dt_struct(blob, (void *)addr, 0, len);
+	ret	 = of_blob_move_dt_struct(blob, (void *)addr, 0, len);
 	if (ret)
 		return ret;
 
@@ -460,47 +407,39 @@ static int of_add_property(void *blob,
 	*p++ = swap_uint32(OF_DT_TOKEN_PROP);
 	*p++ = swap_uint32(valuelen);
 	*p++ = swap_uint32(string_offset);
-	memcpy((unsigned char *)p, value, valuelen);
+	_memcpy((unsigned char *)p, value, valuelen);
 
 	return 0;
 }
 
-static int of_update_property_value(void *blob,
-				int property_offset,
-				const void *value,
-				int valuelen)
+static int of_update_property_value(void *blob, int property_offset, const void *value, int valuelen)
 {
-	int oldlen;
-	unsigned int *plen;
+	int			   oldlen;
+	unsigned int	 *plen;
 	unsigned char *pvalue;
-	void *point;
-	int ret;
+	void		  *point;
+	int			   ret;
 
-	plen = (unsigned int *)of_dt_struct_offset(blob, property_offset + 4);
-	pvalue = (unsigned char *)of_dt_struct_offset(blob,
-						property_offset + 12);
-	point = (void *)pvalue;
+	plen   = (unsigned int *)of_dt_struct_offset(blob, property_offset + 4);
+	pvalue = (unsigned char *)of_dt_struct_offset(blob, property_offset + 12);
+	point  = (void *)pvalue;
 
 	/* get the old len of value */
 	oldlen = swap_uint32(*plen);
 
-	ret = of_blob_move_dt_struct(blob, point,
-			OF_ALIGN(oldlen), OF_ALIGN(valuelen));
+	ret = of_blob_move_dt_struct(blob, point, OF_ALIGN(oldlen), OF_ALIGN(valuelen));
 	if (ret)
 		return ret;
 
 	/* set the new len and value */
 	*plen = swap_uint32(valuelen);
-	memcpy(pvalue, value, valuelen);
+
+	_memcpy(pvalue, value, valuelen);
 
 	return 0;
 }
 
-static int of_set_property(void *blob,
-				int nodeoffset,
-				char *property_name,
-				void *value,
-				int valuelen)
+static int of_set_property(void *blob, int nodeoffset, const char *property_name, void *value, int valuelen)
 {
 	int property_offset;
 	int ret;
@@ -508,50 +447,47 @@ static int of_set_property(void *blob,
 	/* If find the property name in the dt blob, update its value,
 	 * else to add this property
 	 */
-	ret = of_get_property_offset_by_name(blob, nodeoffset,
-					property_name, &property_offset);
+	ret = of_get_property_offset_by_name(blob, nodeoffset, property_name, &property_offset);
 	if (ret) {
-		ret = of_add_property(blob, nodeoffset,
-				property_name, value, valuelen);
+    trace("DT: adding property %s size %u\r\n", property_name, valuelen);
+		ret = of_add_property(blob, nodeoffset, property_name, value, valuelen);
 		if (ret)
-			debug("DT: fail to add property\n");
+			warning("DT: fail to add property\r\n");
 
 		return ret;
 	}
 
 	ret = of_update_property_value(blob, property_offset, value, valuelen);
 	if (ret) {
-		debug("DT: fail to update property\n");
+		warning("DT: fail to update property\r\n");
 		return ret;
 	}
+  trace("DT: updated property %s size %u\r\n", property_name, valuelen);
 
 	return 0;
 }
-#endif
 
 /* ---------------------------------------------------- */
 
-int check_dt_blob_valid(void *blob)
+int fdt_check_blob_valid(void *blob)
 {
 	return ((of_get_magic_number(blob) == OF_DT_MAGIC) && (of_get_format_version(blob) >= 17)) ? 0 : 1;
 }
-
-#if 0
 
 /* The /chosen node
  * property "bootargs": This zero-terminated string is passed
  * as the kernel command line.
  */
-int fixup_chosen_node(void *blob, char *bootargs)
+int fdt_update_bootargs(void *blob, const char *bootargs)
 {
-	int nodeoffset;
-	char *value = bootargs;
-	int valuelen = strlen(value) + 1;
-	int ret;
+	int	  nodeoffset;
+	char *value	   = bootargs;
+	int	  valuelen = strlen(value) + 1;
+	int	  ret;
 
 	ret = of_get_node_offset(blob, "chosen", &nodeoffset);
 	if (ret) {
-		debug("DT: doesn't support add node\n");
+		warning("DT: doesn't support add node (chosen)\r\n");
 		return ret;
 	}
 
@@ -561,7 +497,39 @@ int fixup_chosen_node(void *blob, char *bootargs)
 	 */
 	ret = of_set_property(blob, nodeoffset, "bootargs", value, valuelen);
 	if (ret) {
-		debug("fail to set bootargs property\n");
+		warning("fail to set bootargs property\r\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+/* The /chosen node
+ * property "linux,initrd-start" and "linux,initrd-end"
+ */
+int fdt_update_initrd(void *blob, uint32_t start, uint32_t end)
+{
+	int			 nodeoffset;
+	unsigned int data;
+	int			 ret;
+
+	ret = of_get_node_offset(blob, "chosen", &nodeoffset);
+	if (ret) {
+		debug("DT: doesn't support add node (chosen)\r\n");
+		return ret;
+	}
+
+	data = swap_uint32(start);
+	ret	 = of_set_property(blob, nodeoffset, "linux,initrd-start", &data, sizeof(data));
+	if (ret) {
+		warning("DT: could not set linux,initrd-start property\r\n");
+		return ret;
+	}
+
+	data = swap_uint32(end);
+	ret	 = of_set_property(blob, nodeoffset, "linux,initrd-end", &data, sizeof(data));
+	if (ret) {
+		warning("DT: could not set linux,initrd-end property\r\n");
 		return ret;
 	}
 
@@ -573,18 +541,16 @@ int fixup_chosen_node(void *blob, char *bootargs)
  * - device_type: has to be "memory".
  * - reg: this property contains all the physical memory ranges of your boards.
  */
-int fixup_memory_node(void *blob,
-			unsigned int *mem_bank,
-			unsigned int *mem_size)
+int fdt_update_memory(void *blob, unsigned int mem_bank, unsigned int mem_size)
 {
-	int nodeoffset;
-	unsigned int data[2];
-	int valuelen;
-	int ret;
+	int			 nodeoffset;
+	unsigned int data[4];
+	int			 valuelen;
+	int			 ret;
 
 	ret = of_get_node_offset(blob, "memory", &nodeoffset);
 	if (ret) {
-		debug("DT: doesn't support add node\n");
+		warning("DT: doesn't support add node (memory)\r\n");
 		return ret;
 	}
 
@@ -593,24 +559,21 @@ int fixup_memory_node(void *blob,
 	 * if the property exists, update it.
 	 */
 	/* set "device_type" property */
-	ret = of_set_property(blob, nodeoffset,
-			"device_type", "memory", sizeof("memory"));
+	ret = of_set_property(blob, nodeoffset, "device_type", "memory", sizeof("memory"));
 	if (ret) {
-		debug("DT: could not set device_type property\n");
+		warning("DT: could not set device_type property\r\n");
 		return ret;
 	}
 
 	/* set "reg" property */
+	data[0]	 = swap_uint32(mem_bank);
+	data[1]	 = swap_uint32(mem_size);
 	valuelen = 8;
-	data[0] = swap_uint32(*mem_bank);
-	data[1] = swap_uint32(*mem_size);
-
-	ret = of_set_property(blob, nodeoffset, "reg", data, valuelen);
+	ret		 = of_set_property(blob, nodeoffset, "reg", data, valuelen);
 	if (ret) {
-		debug("DT: could not set reg property\n");
+		warning("DT: could not set reg property\r\n");
 		return ret;
 	}
 
 	return 0;
 }
-#endif
