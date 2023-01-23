@@ -212,7 +212,7 @@
 /  To enable exFAT, also LFN needs to be enabled. (FF_USE_LFN >= 1)
 /  Note that enabling exFAT discards ANSI C (C89) compatibility. */
 
-#define FF_FS_NORTC	  0
+#define FF_FS_NORTC	  1
 #define FF_NORTC_MON  1
 #define FF_NORTC_MDAY 1
 #define FF_NORTC_YEAR 2022
@@ -248,3 +248,19 @@
 /      lock control is independent of re-entrancy. */
 
 #define FF_FS_REENTRANT 0
+#define FF_FS_TIMEOUT	1000
+/* The option FF_FS_REENTRANT switches the re-entrancy (thread safe) of the FatFs
+/  module itself. Note that regardless of this option, file access to different
+/  volume is always re-entrant and volume control functions, f_mount(), f_mkfs()
+/  and f_fdisk() function, are always not re-entrant. Only file/directory access
+/  to the same volume is under control of this featuer.
+/
+/   0: Disable re-entrancy. FF_FS_TIMEOUT have no effect.
+/   1: Enable re-entrancy. Also user provided synchronization handlers,
+/      ff_mutex_create(), ff_mutex_delete(), ff_mutex_take() and ff_mutex_give()
+/      function, must be added to the project. Samples are available in ffsystem.c.
+/
+/  The FF_FS_TIMEOUT defines timeout period in unit of O/S time tick.
+*/
+
+/*--- End of configuration options ---*/
