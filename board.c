@@ -6,17 +6,13 @@
 #include "sunxi_spi.h"
 #include "sdmmc.h"
 
-#define UART_BASE(id) ((uint32_t)(0x02500000 + (0x400 * (id))))
-
 sunxi_usart_t usart_dbg = {
-	.base	 = UART_BASE(3),
 	.id		 = 3,
 	.gpio_tx = {GPIO_PIN(PORTB, 6), GPIO_PERIPH_MUX7},
 	.gpio_rx = {GPIO_PIN(PORTB, 7), GPIO_PERIPH_MUX7},
 };
 
 sunxi_usart_t usart_mgmt = {
-	.base	 = UART_BASE(5),
 	.id		 = 5,
 	.gpio_tx = {GPIO_PIN(PORTD, 5), GPIO_PERIPH_MUX5},
 	.gpio_rx = {GPIO_PIN(PORTD, 6), GPIO_PERIPH_MUX5},
@@ -56,6 +52,33 @@ static const gpio_t hold = GPIO_PIN(PORTC, 7);
 static const gpio_t bus1 = GPIO_PIN(PORTD, 18);
 static const gpio_t bus2 = GPIO_PIN(PORTD, 15);
 
+slot_t slots[3] = {
+	{
+		.dtb_filename	 = "core1-t113-v1-recovery.dtb",
+		.kernel_filename = "zImage",
+		.kernel_cmd		 = " root=/dev/mmcblk0p3 rootwait rauc.slot=A",
+		.initrd_filename = "rootfs.cpio.zst",
+		.initrd_start	 = CONFIG_BOOT_INITRD_START,
+		.initrd_end		 = CONFIG_BOOT_INITRD_END,
+	 },
+	{
+		.dtb_filename	 = "core1-t113-v1-a.dtb",
+		.kernel_filename = "zImage.A",
+		.kernel_cmd		 = " root=/dev/mmcblk0p4 rootwait rauc.slot=B",
+		.initrd_filename = "",
+		.initrd_start	 = 0,
+		.initrd_end		 = 0,
+	 },
+	{
+		.dtb_filename	 = "core1-t113-v1-b.dtb",
+		.kernel_filename = "zImage.B",
+		.kernel_cmd		 = " root=/dev/mmcblk0p2 rootwait rauc.slot=R",
+		.initrd_filename = "",
+		.initrd_start	 = 0,
+		.initrd_end		 = 0,
+	 }
+};
+
 static void output_init(const gpio_t gpio)
 {
 	sunxi_gpio_init(gpio, GPIO_OUTPUT);
@@ -85,7 +108,7 @@ void board_init()
 	// sunxi_gpio_set_value(bus2, 1);
 	board_set_led(1, 1);
 	board_set_led(2, 1);
-	sunxi_usart_init(&usart_dbg);
-	sunxi_usart_init(&usart_mgmt);
+	sunxi_usart_init(&usart_dbg, 115200);
+	sunxi_usart_init(&usart_mgmt, 115200);
 	// rtc_init();
 }
