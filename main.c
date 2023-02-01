@@ -33,8 +33,8 @@ typedef struct {
 	unsigned int end;
 } linux_zimage_header_t;
 
-uint8_t		uartbuf[40];
-char cmd_line[128];
+uint8_t uartbuf[40];
+char	cmd_line[128];
 
 #if defined(CONFIG_BOOT_SDCARD) || defined(CONFIG_BOOT_MMC)
 
@@ -108,21 +108,21 @@ static int load_sdcard(image_info_t *image)
 	ret = fatfs_loadimage(image->of_filename, image->dtb_dest);
 	if (ret <= 0)
 		return ret;
-  image->kernel_size = ret;
+	image->kernel_size = ret;
 
 	info("FATFS: read %s addr=%x\r\n", image->filename, (unsigned int)image->kernel_dest);
 	ret = fatfs_loadimage(image->filename, image->kernel_dest);
 	if (ret <= 0)
 		return ret;
-  image->dtb_size = ret;
+	image->dtb_size = ret;
 
-  if (strlen(image->initrd_filename) && image->initrd_dest) {
-    info("FATFS: read %s addr=%x\r\n", image->initrd_filename, (unsigned int)image->initrd_dest);
-    ret = fatfs_loadimage(image->initrd_filename, image->initrd_dest);
-    if (ret <= 0)
-      return ret;
-    image->initrd_size = ret;
-  }
+	if (strlen(image->initrd_filename) && image->initrd_dest) {
+		info("FATFS: read %s addr=%x\r\n", image->initrd_filename, (unsigned int)image->initrd_dest);
+		ret = fatfs_loadimage(image->initrd_filename, image->initrd_dest);
+		if (ret <= 0)
+			return ret;
+		image->initrd_size = ret;
+	}
 
 	/* umount fs */
 	fret = f_mount(0, "", 0);
@@ -199,7 +199,7 @@ static int boot_image_setup(unsigned char *addr, unsigned int *entry)
 
 int main(void)
 {
-  uint32_t memory_size;
+	uint32_t memory_size;
 	board_init();
 	sunxi_clk_init();
 
@@ -215,37 +215,34 @@ int main(void)
 	sunxi_clk_dump();
 #endif
 
-	sunxi_usart_put(&usart_mgmt, (char *)uartbuf, 2);
-	// mgmt_get_time(&usart_mgmt, uartbuf);
-
 	memset(&image, 0, sizeof(image_info_t));
 
-	image.dtb_dest = (u8 *)CONFIG_DTB_LOAD_ADDR;
-	image.kernel_dest	  = (u8 *)CONFIG_KERNEL_LOAD_ADDR;
+	image.dtb_dest	  = (u8 *)CONFIG_DTB_LOAD_ADDR;
+	image.kernel_dest = (u8 *)CONFIG_KERNEL_LOAD_ADDR;
 
 // Normal media boot
 #if defined(CONFIG_BOOT_SDCARD) || defined(CONFIG_BOOT_MMC) || defined(CONFIG_BOOT_SPINAND)
-  info("BOOT: standard mode\r\n");
+	info("BOOT: standard mode\r\n");
 
 	uint8_t slot = mgmt_get_slot(&usart_mgmt, uartbuf);
 	info("MGMT: boot slot %u\r\n", slot);
 
-  image.initrd_dest = slots[slot].initrd_start;
+	image.initrd_dest = slots[slot].initrd_start;
 
-  strcpy(cmd_line, CONFIG_BOOT_CMD);
+	strcpy(cmd_line, CONFIG_BOOT_CMD);
 
-  strcat(cmd_line, slots[slot].kernel_cmd);
-  strcpy(image.filename, slots[slot].kernel_filename);
-  strcpy(image.of_filename, slots[slot].dtb_filename);
-  strcpy(image.initrd_filename, slots[slot].initrd_filename);
+	strcat(cmd_line, slots[slot].kernel_cmd);
+	strcpy(image.filename, slots[slot].kernel_filename);
+	strcpy(image.of_filename, slots[slot].dtb_filename);
+	strcpy(image.initrd_filename, slots[slot].initrd_filename);
 
 #else // 100% Fel boot
-  info("BOOT: FEL mode\r\n");
+	info("BOOT: FEL mode\r\n");
 
-  image.initrd_dest = CONFIG_BOOT_INITRD_START;
-  image.initrd_size = CONFIG_BOOT_INITRD_END - CONFIG_BOOT_INITRD_START; // Default value of 15MB, since we don't know
+	image.initrd_dest = CONFIG_BOOT_INITRD_START;
+	image.initrd_size = CONFIG_BOOT_INITRD_END - CONFIG_BOOT_INITRD_START; // Default value of 15MB, since we don't know
 
-  strcpy(cmd_line, CONFIG_BOOT_CMD);
+	strcpy(cmd_line, CONFIG_BOOT_CMD);
 
 #endif
 
@@ -316,15 +313,15 @@ _boot:
 	}
 
 	if (image.initrd_dest) {
-    if (fdt_update_initrd(image.dtb_dest, image.initrd_dest, image.initrd_dest + image.initrd_size)) {
-      error("BOOT: Failed to initrd address\r\n");
-    } else {
-      debug("BOOT: Set initrd to 0x%x-0x%x\r\n", image.initrd_dest, image.initrd_dest + image.initrd_size);
-    }
-  }
+		if (fdt_update_initrd(image.dtb_dest, image.initrd_dest, image.initrd_dest + image.initrd_size)) {
+			error("BOOT: Failed to initrd address\r\n");
+		} else {
+			debug("BOOT: Set initrd to 0x%x-0x%x\r\n", image.initrd_dest, image.initrd_dest + image.initrd_size);
+		}
+	}
 
 #if defined(CONFIG_BOOT_SDCARD) || defined(CONFIG_BOOT_MMC)
-	if (mgmt_boot(&usart_mgmt, uartbuf) != 0) {
+	if (slot != 0 && mgmt_boot(&usart_mgmt, uartbuf) != 0) {
 		warning("MGMT: boot command error\r\n");
 	}
 #endif
