@@ -39,17 +39,17 @@ static inline unsigned int swap_uint32(unsigned int data)
 #define FILENAME_MAX_LEN 64
 typedef struct {
 	unsigned char *kernel_dest;
-  unsigned int   kernel_size;
+	unsigned int   kernel_size;
 
 	unsigned char *dtb_dest;
-  unsigned int   dtb_size;
+	unsigned int   dtb_size;
 
 	unsigned char *initrd_dest;
-  unsigned int   initrd_size;
+	unsigned int   initrd_size;
 
 	char filename[FILENAME_MAX_LEN];
 	char of_filename[FILENAME_MAX_LEN];
-  char initrd_filename[FILENAME_MAX_LEN];
+	char initrd_filename[FILENAME_MAX_LEN];
 } image_info_t;
 
 void	 udelay(uint64_t us);

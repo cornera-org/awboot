@@ -52,11 +52,17 @@ const gpio_t hold = GPIO_PIN(PORTC, 7);
 const gpio_t bus1 = GPIO_PIN(PORTD, 18);
 const gpio_t bus2 = GPIO_PIN(PORTD, 15);
 
+static const gpio_t phyaddr0 = GPIO_PIN(PORTE, 7);
+static const gpio_t phyaddr1 = GPIO_PIN(PORTE, 0);
+static const gpio_t phyaddr2 = GPIO_PIN(PORTE, 1);
+static const gpio_t phyaddr3 = GPIO_PIN(PORTE, 2);
+static const gpio_t phynrst	 = GPIO_PIN(PORTE, 11);
+
 slot_t slots[3] = {
 	{
 		.dtb_filename	 = "core1-t113-v1-recovery.dtb",
-		.kernel_filename = "zImage",
-		.kernel_cmd		 = " root=/dev/mmcblk0p3 rootwait rauc.slot=A",
+		.kernel_filename = "zImage.R",
+		.kernel_cmd		 = " rauc.slot=R",
 		.initrd_filename = "rootfs.cpio.zst",
 		.initrd_start	 = CONFIG_BOOT_INITRD_START,
 		.initrd_end		 = CONFIG_BOOT_INITRD_END,
@@ -64,7 +70,7 @@ slot_t slots[3] = {
 	{
 		.dtb_filename	 = "core1-t113-v1-a.dtb",
 		.kernel_filename = "zImage.A",
-		.kernel_cmd		 = " root=/dev/mmcblk0p4 rootwait rauc.slot=B",
+		.kernel_cmd		 = " root=/dev/mmcblk0p4 rootwait rauc.slot=A",
 		.initrd_filename = "",
 		.initrd_start	 = 0,
 		.initrd_end		 = 0,
@@ -72,7 +78,7 @@ slot_t slots[3] = {
 	{
 		.dtb_filename	 = "core1-t113-v1-b.dtb",
 		.kernel_filename = "zImage.B",
-		.kernel_cmd		 = " root=/dev/mmcblk0p2 rootwait rauc.slot=R",
+		.kernel_cmd		 = " root=/dev/mmcblk0p2 rootwait rauc.slot=B",
 		.initrd_filename = "",
 		.initrd_start	 = 0,
 		.initrd_end		 = 0,
@@ -105,6 +111,22 @@ void board_init()
 	output_init(led2);
 	output_init(bus1);
 	output_init(bus2);
+
+	// Set eth phy address to 0
+	output_init(phyaddr0);
+	output_init(phyaddr1);
+	output_init(phyaddr2);
+	output_init(phyaddr3);
+	output_init(phynrst);
+
+	sunxi_gpio_set_pull(phyaddr0, GPIO_PULL_DOWN);
+	sunxi_gpio_set_pull(phyaddr1, GPIO_PULL_DOWN);
+	sunxi_gpio_set_pull(phyaddr2, GPIO_PULL_DOWN);
+	sunxi_gpio_set_pull(phyaddr3, GPIO_PULL_DOWN);
+
+	mdelay(5);
+	sunxi_gpio_set_value(phynrst, 1);
+
 	// sunxi_gpio_set_value(bus1, 1);
 	// sunxi_gpio_set_value(bus2, 1);
 	board_set_led(1, 1);
