@@ -17,7 +17,7 @@
 #include "debug.h"
 #include "reg-ccu.h"
 #include "reg-dram.h"
-#include "main.h"
+#include "common.h"
 #include "board.h"
 
 #define readl(addr) read32(addr)

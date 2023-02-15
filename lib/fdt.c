@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-#include "main.h"
+#include "common.h"
 #include "string.h"
 #include "fdt.h"
 #include "debug.h"
@@ -13,11 +13,11 @@
 #define OF_DT_TOKEN_NOP		   0x00000004
 #define OF_DT_END			   0x00000009
 
-static int _memcpy(void *dst, const void *src, size_t len)
+static void _memcpy(void *dst, const void *src, size_t len)
 {
 	unsigned char		  *cdst = dst;
 	const unsigned char *csrc = src;
-  while (len--) 
+	while (len--)
 		*cdst++ = *csrc++;
 }
 
@@ -449,7 +449,7 @@ static int of_set_property(void *blob, int nodeoffset, const char *property_name
 	 */
 	ret = of_get_property_offset_by_name(blob, nodeoffset, property_name, &property_offset);
 	if (ret) {
-    trace("DT: adding property %s size %u\r\n", property_name, valuelen);
+		trace("DT: adding property %s size %u\r\n", property_name, valuelen);
 		ret = of_add_property(blob, nodeoffset, property_name, value, valuelen);
 		if (ret)
 			warning("DT: fail to add property\r\n");
@@ -462,7 +462,7 @@ static int of_set_property(void *blob, int nodeoffset, const char *property_name
 		warning("DT: fail to update property\r\n");
 		return ret;
 	}
-  trace("DT: updated property %s size %u\r\n", property_name, valuelen);
+	trace("DT: updated property %s size %u\r\n", property_name, valuelen);
 
 	return 0;
 }

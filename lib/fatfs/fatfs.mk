@@ -1,6 +1,6 @@
 FS_FAT := lib/fatfs
 
-INCLUDE_DIRS += -I $(FS_FAT)/
+INCLUDE_DIRS += -I $(FS_FAT)
 
 USE_FAT = $(shell grep -E "^\#define CONFIG_BOOT_(SDCARD|MMC)" board.h)
 

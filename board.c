@@ -1,21 +1,16 @@
-#include "main.h"
+#include "common.h"
 #include "board.h"
 #include "sunxi_gpio.h"
 #include "sunxi_sdhci.h"
 #include "sunxi_usart.h"
 #include "sunxi_spi.h"
+#include "sunxi_wdg.h"
 #include "sdmmc.h"
 
 sunxi_usart_t usart_dbg = {
 	.id		 = 3,
 	.gpio_tx = {GPIO_PIN(PORTB, 6), GPIO_PERIPH_MUX7},
 	.gpio_rx = {GPIO_PIN(PORTB, 7), GPIO_PERIPH_MUX7},
-};
-
-sunxi_usart_t usart_mgmt = {
-	.id		 = 5,
-	.gpio_tx = {GPIO_PIN(PORTD, 5), GPIO_PERIPH_MUX5},
-	.gpio_rx = {GPIO_PIN(PORTD, 6), GPIO_PERIPH_MUX5},
 };
 
 sunxi_spi_t sunxi_spi0 = {
@@ -46,11 +41,12 @@ sdhci_t sdhci0 = {
 	.gpio_d3   = {GPIO_PIN(PORTF, 4), GPIO_PERIPH_MUX2},
 };
 
-const gpio_t led1 = GPIO_PIN(PORTD, 19);
-const gpio_t led2 = GPIO_PIN(PORTB, 5);
-const gpio_t hold = GPIO_PIN(PORTC, 7);
-const gpio_t bus1 = GPIO_PIN(PORTD, 18);
-const gpio_t bus2 = GPIO_PIN(PORTD, 15);
+static const gpio_t led_board = GPIO_PIN(PORTD, 19);
+static const gpio_t led_btn	  = GPIO_PIN(PORTB, 5); // rev1.1 (PORTD, 18)
+static const gpio_t btn		  = GPIO_PIN(PORTB, 4); // rev1.1 (PORTD, 11)
+
+static const gpio_t status	 = GPIO_PIN(PORTD, 5);
+static const gpio_t power_on = GPIO_PIN(PORTD, 6);
 
 static const gpio_t phyaddr0 = GPIO_PIN(PORTE, 7);
 static const gpio_t phyaddr1 = GPIO_PIN(PORTE, 0);
@@ -58,59 +54,54 @@ static const gpio_t phyaddr2 = GPIO_PIN(PORTE, 1);
 static const gpio_t phyaddr3 = GPIO_PIN(PORTE, 2);
 static const gpio_t phynrst	 = GPIO_PIN(PORTE, 11);
 
-slot_t slots[3] = {
-	{
-		.dtb_filename	 = "core1-t113-v1-recovery.dtb",
-		.kernel_filename = "zImage.R",
-		.kernel_cmd		 = " rauc.slot=R",
-		.initrd_filename = "rootfs.cpio.zst",
-		.initrd_start	 = CONFIG_BOOT_INITRD_START,
-		.initrd_end		 = CONFIG_BOOT_INITRD_END,
-	 },
-	{
-		.dtb_filename	 = "core1-t113-v1-a.dtb",
-		.kernel_filename = "zImage.A",
-		.kernel_cmd		 = " root=/dev/mmcblk0p4 rootwait rauc.slot=A",
-		.initrd_filename = "",
-		.initrd_start	 = 0,
-		.initrd_end		 = 0,
-	 },
-	{
-		.dtb_filename	 = "core1-t113-v1-b.dtb",
-		.kernel_filename = "zImage.B",
-		.kernel_cmd		 = " root=/dev/mmcblk0p2 rootwait rauc.slot=B",
-		.initrd_filename = "",
-		.initrd_start	 = 0,
-		.initrd_end		 = 0,
-	 }
-};
-
 static void output_init(const gpio_t gpio)
 {
 	sunxi_gpio_init(gpio, GPIO_OUTPUT);
-	sunxi_gpio_set_value(gpio, 0);
+	sunxi_gpio_write(gpio, 0);
+};
+
+static void intput_init(const gpio_t gpio)
+{
+	sunxi_gpio_init(gpio, GPIO_INPUT);
 };
 
 void board_set_led(uint8_t num, uint8_t on)
 {
 	switch (num) {
-		case 1:
-			sunxi_gpio_set_value(led1, on);
+		case LED_BOARD:
+			sunxi_gpio_write(led_board, on);
 			break;
-		case 2:
-			sunxi_gpio_set_value(led2, on);
+		case LED_BUTTON:
+			sunxi_gpio_write(led_btn, on);
 			break;
 		default:
 			break;
 	}
 }
 
+bool board_get_button()
+{
+	return !sunxi_gpio_read(btn);
+}
+
+bool board_get_power_on()
+{
+	return sunxi_gpio_read(power_on);
+}
+
+void board_set_status(bool on)
+{
+	sunxi_gpio_write(status, on);
+}
+
 void board_init()
 {
-	output_init(led1);
-	output_init(led2);
-	output_init(bus1);
-	output_init(bus2);
+	output_init(led_board);
+	output_init(led_btn);
+	intput_init(btn);
+
+	output_init(status);
+	intput_init(power_on);
 
 	// Set eth phy address to 0
 	output_init(phyaddr0);
@@ -124,14 +115,15 @@ void board_init()
 	sunxi_gpio_set_pull(phyaddr2, GPIO_PULL_DOWN);
 	sunxi_gpio_set_pull(phyaddr3, GPIO_PULL_DOWN);
 
-	mdelay(5);
-	sunxi_gpio_set_value(phynrst, 1);
+	// Start PHY with addr 0
+	mdelay(2);
+	sunxi_gpio_write(phynrst, 1);
 
-	// sunxi_gpio_set_value(bus1, 1);
-	// sunxi_gpio_set_value(bus2, 1);
-	board_set_led(1, 1);
-	board_set_led(2, 1);
+	board_set_led(LED_BOARD, 1);
+	board_set_led(LED_BUTTON, 1);
 	sunxi_usart_init(&usart_dbg, 115200);
-	sunxi_usart_init(&usart_mgmt, 115200);
-	// rtc_init();
+	sunxi_wdg_init();
+
+	// We need to set the pin to 1 for MCU to detect fallin edge later on.
+	board_set_status(1);
 }

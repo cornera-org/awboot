@@ -8,7 +8,7 @@
 /*-----------------------------------------------------------------------*/
 #include "ff.h" /* Obtains integer types */
 #include "diskio.h"
-#include "main.h"
+#include "common.h"
 #include "sdmmc.h"
 #include "debug.h"
 #include "dram.h"

@@ -2,6 +2,7 @@
 #define __DEBUG_H__
 
 #include "xformat.h"
+#include "sunxi_wdg.h"
 
 #define LOG_ERROR 10
 #define LOG_WARN  20
@@ -39,11 +40,12 @@
 #define error(...)
 #endif
 
-#define fatal(fmt, ...)                                         \
-	{                                                           \
-		message("[F] " fmt "restarting...\r\n", ##__VA_ARGS__); \
-		mdelay(100);                                            \
-		reset();                                                \
+#define fatal(fmt, ...)                                               \
+	{                                                                 \
+		sunxi_wdg_set(1);                                             \
+		message("[F] " fmt "restarting in 1s...\r\n", ##__VA_ARGS__); \
+		while (1) {                                                   \
+		};                                                            \
 	}
 
 void message(const char *fmt, ...);

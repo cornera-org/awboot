@@ -44,7 +44,7 @@ write awboot-boot.bin to sdcard with an offset of:
 - MBR: 8KB (sector 16)
 - GPT: 128KB (sector 256)
 ```
-sudo dd if=awboot-boot-sd.bin of=/dev/(your sd device) bs=1024 seek=8
+sudo dd if=awboot-boot-sd.bin of=/dev/(your sd device) bs=1k seek=128
 ```
 - compile (if needed) and copy your `.dtb` file to the FAT partition.
 - copy zImage to the FAT partition.
