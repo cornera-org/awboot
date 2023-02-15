@@ -8,6 +8,8 @@
 #include "io.h"
 #include "types.h"
 #include "debug.h"
+#include "ff.h"
+#include "sunxi_spi.h"
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
 
@@ -16,6 +18,9 @@
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #define max(a, b) (((a) > (b)) ? (a) : (b))
+
+#define MAX_CMD_SIZE	  128
+#define MAX_FILENAME_SIZE 32
 
 #ifndef NULL
 #define NULL 0
@@ -36,7 +41,6 @@ static inline unsigned int swap_uint32(unsigned int data)
 	return a | b | c | d;
 }
 
-#define FILENAME_MAX_LEN 64
 typedef struct {
 	unsigned char *kernel_dest;
 	unsigned int   kernel_size;
@@ -47,10 +51,19 @@ typedef struct {
 	unsigned char *initrd_dest;
 	unsigned int   initrd_size;
 
-	char filename[FILENAME_MAX_LEN];
-	char of_filename[FILENAME_MAX_LEN];
-	char initrd_filename[FILENAME_MAX_LEN];
+	char *filename;
+	char *of_filename;
+	char *initrd_filename;
 } image_info_t;
+
+/* Linux zImage Header */
+#define LINUX_ZIMAGE_MAGIC 0x016f2818
+typedef struct {
+	unsigned int code[9];
+	unsigned int magic;
+	unsigned int start;
+	unsigned int end;
+} linux_zimage_header_t;
 
 void	 udelay(uint64_t us);
 void	 mdelay(uint32_t ms);

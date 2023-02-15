@@ -1,4 +1,4 @@
-#include "main.h"
+#include "common.h"
 #include "debug.h"
 #include "sunxi_gpio.h"
 
@@ -54,7 +54,7 @@ static inline uint32_t _pin_num(const gpio_t pin)
 	return (pin & ((1 << PIO_NUM_IO_BITS) - 1));
 }
 
-void sunxi_gpio_init(const gpio_t pin, int cfg)
+void sunxi_gpio_init(const gpio_t pin, unsigned int cfg)
 {
 	uint32_t port_addr = _port_base_get(pin);
 	uint32_t pin_num   = _pin_num(pin);
@@ -64,11 +64,12 @@ void sunxi_gpio_init(const gpio_t pin, int cfg)
 	addr = port_addr + GPIO_CFG0 + ((pin_num >> 3) << 2);
 	val	 = read32(addr);
 	val &= ~(0xf << ((pin_num & 0x7) << 2));
-	val |= ((cfg & 0xf) << ((pin_num & 0x7) << 2));
+	if (cfg)
+		val |= ((cfg & 0xf) << ((pin_num & 0x7) << 2));
 	write32(addr, val);
 }
 
-void sunxi_gpio_set_value(const gpio_t pin, int value)
+void sunxi_gpio_write(const gpio_t pin, int value)
 {
 	uint32_t port_addr = _port_base_get(pin);
 	uint32_t pin_num   = _pin_num(pin);

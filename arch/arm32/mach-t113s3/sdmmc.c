@@ -26,7 +26,7 @@
  *
  */
 
-#include "main.h"
+#include "common.h"
 #include "debug.h"
 #include "sunxi_sdhci.h"
 #include "sdmmc.h"
@@ -174,6 +174,23 @@ static bool go_idle_state(sdhci_t *hci)
 	cmd.idx		 = MMC_GO_IDLE_STATE;
 	cmd.arg		 = 0;
 	cmd.resptype = hci->isspi ? MMC_RSP_R1 : MMC_RSP_NONE;
+
+	return sdhci_transfer(hci, &cmd, NULL);
+}
+
+static bool enable_mmc_rstn(sdhci_t *hci, sdmmc_t *card)
+{
+	sdhci_cmd_t cmd = {0};
+
+	if (card->extcsd[EXT_CSD_RST_N_FUNCTION] != 0) {
+		debug("SHMC: MMC reset signal already enabled\r\n");
+		return true;
+	}
+
+	cmd.idx		 = SD_CMD_SWITCH_FUNC;
+	cmd.resptype = MMC_RSP_R1;
+	cmd.arg		 = (3 << 24) | (EXT_CSD_RST_N_FUNCTION << 16) | 1 << 8 | EXT_CSD_CMD_SET_NORMAL;
+	debug("SHMC: MMC reset signal enabled\r\n");
 
 	return sdhci_transfer(hci, &cmd, NULL);
 }
@@ -630,6 +647,20 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 			if (!sdhci_transfer(hci, &cmd, NULL))
 				return FALSE;
 		} else if (card->version & MMC_VERSION_MMC) {
+			if (card->extcsd[EXT_CSD_RST_N_FUNCTION] == 0) {
+				cmd.idx		 = SD_CMD_SWITCH_FUNC;
+				cmd.resptype = MMC_RSP_R1;
+				cmd.arg		 = (3 << 24) | (EXT_CSD_RST_N_FUNCTION << 16) | 1 << 8 | EXT_CSD_CMD_SET_NORMAL;
+
+				if (sdhci_transfer(hci, &cmd, NULL)) {
+					debug("SHMC: eMMC hardware reset signal enabled\r\n");
+				} else {
+					warning("SHMC: failed to enable eMMC hardware reset signal\r\n");
+				}
+			} else {
+				debug("SHMC: eMMC hardware reset signal already enabled\r\n");
+			}
+
 			switch (hci->width) {
 				case MMC_BUS_WIDTH_4:
 					if (hci->clock == MMC_CLK_50M_DDR)
@@ -661,7 +692,9 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 			}
 
 			// Write EXT_CSD register 183 (width) with our value
-			cmd.arg = (3 << 24) | (EXT_CSD_BUS_WIDTH << 16) | (width << 8) | 1;
+			cmd.idx		 = SD_CMD_SWITCH_FUNC;
+			cmd.resptype = MMC_RSP_R1;
+			cmd.arg		 = (3 << 24) | (EXT_CSD_BUS_WIDTH << 16) | (width << 8) | 1;
 			if (!sdhci_transfer(hci, &cmd, NULL))
 				return FALSE;
 

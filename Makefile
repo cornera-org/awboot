@@ -5,7 +5,7 @@ CROSS_COMPILE ?= arm-none-eabi
 # Log level defaults to info
 LOG_LEVEL ?= 30
 
-SRCS := main.c board.c lib/debug.c lib/xformat.c lib/fdt.c lib/string.c lib/mgmt.c
+SRCS := main.c board.c
 
 INCLUDE_DIRS :=-I . -I include -I lib
 LIB_DIR := -L ./
@@ -13,7 +13,7 @@ LIBS := -lgcc -nostdlib
 DEFINES := -DLOG_LEVEL=$(LOG_LEVEL) -DBUILD_REVISION=$(shell cat .build_revision)
 
 include arch/arch.mk
-include lib/fatfs/fatfs.mk
+include lib/lib.mk
 
 CFLAGS += -mcpu=cortex-a7 -mthumb-interwork -mthumb -mno-unaligned-access -mfpu=neon-vfpv4 -mfloat-abi=hard
 CFLAGS += -ffast-math -ffunction-sections -fdata-sections -Os -std=gnu99 -Wall -Werror -Wno-unused-function -g -MMD $(INCLUDES) $(DEFINES)
@@ -160,5 +160,7 @@ spi-boot.img: mkboot
 	# dd if=linux/boot/$(KERNEL) of=spi-boot.img bs=2k seek=256 # Kernel on page 256
 
 boot-fel:
-	xfel write 0x30000 awboot-fel.bin
-	xfel exec  0x30000
+	xfel ddr t113-s3
+	xfel write   0x00030000 awboot-fel.bin
+	xfel write32 0x42000024 0 # Reset kernel magic
+	xfel exec    0x00030000

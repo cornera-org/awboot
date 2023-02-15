@@ -1,7 +1,7 @@
 #ifndef __SUNXI_CLK_H__
 #define __SUNXI_CLK_H__
 
-#include "main.h"
+#include "common.h"
 #include "reg-ccu.h"
 #include "reg-r-ccu.h"
 

@@ -28,7 +28,7 @@
 
 #include <arm32.h>
 #include "debug.h"
-#include "main.h"
+#include "common.h"
 
 struct arm_regs_t {
 	uint32_t esp;

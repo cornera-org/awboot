@@ -17,8 +17,8 @@ SRCS	+=  $(SOC)/sunxi_usart.c
 SRCS	+=  $(SOC)/arch_timer.c
 SRCS	+=  $(SOC)/sunxi_gpio.c
 SRCS	+=  $(SOC)/sunxi_clk.c
-# SRCS	+=  $(SOC)/sunxi_rtc.c
 SRCS	+=  $(SOC)/exception.c
+SRCS	+=  $(SOC)/sunxi_wdg.c
 
 USE_SPI = $(shell grep -E "^\#define CONFIG_BOOT_SPI" board.h)
 ifneq ($(USE_SPI),)

@@ -6,7 +6,7 @@
  *
  */
 
-#include "main.h"
+#include "common.h"
 #include "io.h"
 
 /*
@@ -25,7 +25,7 @@ uint64_t get_arch_counter(void)
  */
 uint32_t time_ms(void)
 {
-	return get_arch_counter() / 24000;
+	return get_arch_counter() / (uint64_t)24000;
 }
 
 /*
@@ -48,11 +48,6 @@ void udelay(uint64_t us)
 void mdelay(uint32_t ms)
 {
 	udelay(ms * 1000);
-	uint32_t now;
-
-	now = time_ms();
-	while (time_ms() - now < ms) {
-	};
 }
 
 /************************************************************

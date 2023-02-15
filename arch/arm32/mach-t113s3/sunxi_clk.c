@@ -1,4 +1,4 @@
-#include "main.h"
+#include "common.h"
 #include "board.h"
 #include "sunxi_clk.h"
 #include "reg-ccu.h"

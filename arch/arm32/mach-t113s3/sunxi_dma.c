@@ -22,7 +22,7 @@
  * MA 02111-1307 USA
  */
 
-#include <main.h>
+#include <common.h>
 #include "sunxi_dma.h"
 #include "debug.h"
 #include "reg-ccu.h"
