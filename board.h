@@ -17,6 +17,7 @@
 
 #define CONFIG_CONF_FILENAME	"boot.cfg"
 #define CONFIG_DEFAULT_BOOT_CMD "console=ttyS3,115200 earlycon"
+#define CONFIG_BOOT_MAX_TRIES	2
 
 // #define CONFIG_BOOT_SPINAND
 // #define CONFIG_BOOT_SDCARD

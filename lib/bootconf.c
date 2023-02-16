@@ -39,7 +39,7 @@ char bootconf_get_slot(const char *filename)
 	bytes_read = read_file(filename, (BYTE *)boot_cfg_buffer);
 
 	if (bytes_read <= 0) {
-		error("BOOT: Missing or empty boot.cfg file\r\n");
+		error("BOOT: Missing or empty %s file\r\n", filename);
 		return 'R';
 	}
 
@@ -74,7 +74,50 @@ char bootconf_get_slot(const char *filename)
 	return name;
 }
 
-uint8_t bootconf_read_slot_data(const char *filename, slot_t *slot)
+/*
+  Read state file to know if slot is marked bad
+  Return true (slot good) is missing/empty
+*/
+bool bootconf_is_slot_state_good(const char *filename)
+{
+	int	  bytes_read;
+	char *line_start;
+
+	bytes_read = read_file(filename, (BYTE *)boot_cfg_buffer);
+
+	if (bytes_read <= 0) {
+		error("BOOT: Missing or empty %s file\r\n", filename);
+		return true;
+	}
+
+	line_start = boot_cfg_buffer;
+
+	while (line_start != NULL && *line_start != '\0' && (line_start - boot_cfg_buffer) <= bytes_read) {
+		while (*line_start == ' ')
+			line_start++;
+
+		// Commented or empty lines
+		if (*line_start == '#' || *line_start == '\n') {
+			line_start = strchr(line_start, '\n');
+			if (line_start)
+				line_start++;
+			continue;
+		}
+
+		if (strncmp(line_start, "bad", sizeof("bad") - 1) == 0) {
+			return false;
+		} else if (strncmp(line_start, "good", sizeof("good") - 1) == 0) {
+			return true;
+		}
+		line_start = strchr(line_start, '\n');
+		if (line_start)
+			line_start++;
+	}
+
+	return true;
+}
+
+uint8_t bootconf_load_slot_data(const char *filename, slot_t *slot)
 {
 	int	  bytes_read;
 	char *line_start;
