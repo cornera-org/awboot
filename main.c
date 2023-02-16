@@ -12,8 +12,8 @@
 
 image_info_t image;
 
-uint8_t		  uartbuf[40];
-char		  cmd_line[128];
+static char	  cmd_line[128];
+static char	  filename[16];
 static slot_t slot;
 
 static int boot_image_setup(unsigned char *addr, unsigned int *entry)
@@ -33,11 +33,14 @@ static int boot_image_setup(unsigned char *addr, unsigned int *entry)
 int main(void)
 {
 	unsigned int entry_point = 0;
+	uint32_t	 i;
 	uint32_t	 memory_size;
 	uint32_t	 wait	   = 0;
 	char		 slot_name = 'R';
 	uint8_t		 slot_num  = 0;
-	const char  *slot_filename;
+	uint8_t		 slot_boots[3];
+	bool		 slot_valid[3];
+	char		 slots[3]	 = {'R', 'A', 'B'};
 	uint8_t		 btn_led_val = false;
 	board_init();
 	sunxi_clk_init();
@@ -53,11 +56,15 @@ int main(void)
 	sunxi_clk_dump();
 #endif
 
+	sunxi_wdg_set(10);
+
 	// Check if we should be running
 	if (!board_get_power_on()) {
 		info("Waiting for power off...");
 		board_set_status(0);
 		while (1) { // wait for poweroff or watchdog
+			mdelay(500);
+			message(".");
 		};
 	} else {
 		// Indicate to MCU that we are running
@@ -76,12 +83,15 @@ int main(void)
 		btn_led_val = !btn_led_val;
 		board_set_led(LED_BUTTON, btn_led_val);
 		message("*");
+		sunxi_wdg_set(3);
 		if (wait > 10000) {
 			message("\r\n");
 			info("Release button to enter FEL mode\r\n");
 			board_set_led(LED_BUTTON, 0);
 			board_set_status(0);
+			sunxi_wdg_set(10);
 			while (1) {
+				mdelay(100);
 			};
 		}
 	};
@@ -116,6 +126,26 @@ int main(void)
 			fatal("SMHC: card mount failed\r\n");
 		};
 
+		strcpy(filename + 1, ".state");
+
+		// Check all slots for validity
+		for (i = 0; i < sizeof(slot_boots); i++) {
+			slot_boots[i] = RTC_BKP_REG(i);
+			filename[0]	  = slots[i];
+			if (slot_boots[i] > CONFIG_BOOT_MAX_TRIES) {
+				info("BOOT: slot %u has %u failures, ignored\r\n", i, slot_boots[i]);
+				slot_valid[i] = false;
+			} else {
+				if (bootconf_is_slot_state_good(filename)) {
+					info("BOOT: slot %u valid\r\n", i);
+					slot_valid[i] = true;
+				} else {
+					info("BOOT: slot %u marked bad\r\n", i);
+					slot_valid[i] = false;
+				}
+			}
+		}
+
 		if (wait >= 3000) {
 			info("BOOT: forced recovery boot\r\n");
 			slot_name = 'R';
@@ -126,38 +156,67 @@ int main(void)
 		// Convert to num for backup registers
 		switch (slot_name) {
 			case 'A':
-				slot_num	  = 1;
-				slot_filename = "A.cfg";
+				slot_num = 1;
 				break;
 			case 'B':
-				slot_num	  = 2;
-				slot_filename = "B.cfg";
-				break;
-			case 'C':
-				slot_num	  = 3;
-				slot_filename = "C.cfg";
-				break;
-			case 'D':
-				slot_num	  = 4;
-				slot_filename = "D.cfg";
+				slot_num = 2;
 				break;
 			case 'R':
 			default:
-				slot_num	  = 0;
-				slot_filename = "R.cfg";
+				slot_name = 'R';
+				slot_num  = 0;
 		}
 
-		if (RTC_BKP_REG(slot_num) >= 2) {
-			warning("BOOT: recovery boot after %u failures on slot %c\r\n", RTC_BKP_REG(slot_num), slot_name);
-			slot_num	  = 0;
-			slot_name	  = 'R';
-			slot_filename = "R.cfg";
+		info("BOOT: selected slot %c\r\n", slot_name);
+
+		if (!slot_valid[slot_num] && slot_name != 'R') {
+			// Selected slot is A, slot B is valid
+			if (slot_name == 'A' && slot_valid[2]) {
+				slot_num  = 2;
+				slot_name = 'B';
+			}
+			// Selected slot is B, slot A is valid
+			else if (slot_name == 'B' && slot_valid[1]) {
+				slot_num  = 1;
+				slot_name = 'A';
+			} else {
+				// Recovery slot in last resort
+				slot_num  = 0;
+				slot_name = 'R';
+			}
+			warning("BOOT: switch to slot %c after %u failures\r\n", slot_name, slot_boots[slot_num]);
 		} else {
-			info("BOOT: standard boot on slot %c, failed %u times\r\n", slot_name, RTC_BKP_REG(slot_num));
+			info("BOOT: standard boot on slot %c\r\n", slot_name);
 		}
 
-		if (bootconf_read_slot_data(slot_filename, &slot) != 0) {
-			error("BOOT: failed to read slot config\r\n");
+		filename[0] = slot_name;
+		strcpy(filename + 1, ".cfg");
+		if (bootconf_load_slot_data(filename, &slot) != 0) {
+			if (slot_name != 'R') {
+				if (slot_name == 'A' && slot_valid[2]) { // try B
+					filename[0] = 'B';
+					error("BOOT: failed to load slot %c config, fallback to slot %c\r\n", slot_name, filename[0]);
+					if (bootconf_load_slot_data(filename, &slot) != 0) {
+						error("BOOT: failed to load slot %c config, fallback to slot %c\r\n", filename[0], 'R');
+						if (bootconf_load_slot_data("R.cfg", &slot) != 0) {
+							fatal("BOOT: failed to load recovery slot config\r\n");
+						}
+					}
+				} else if (slot_name == 'B' && slot_valid[1]) { // try A
+					filename[0] = 'A';
+					error("BOOT: failed to load slot %c config, fallback to slot %c\r\n", slot_name, filename[0]);
+					if (bootconf_load_slot_data(filename, &slot) != 0) {
+						error("BOOT: failed to load slot %c config, fallback to slot %c\r\n", filename[0], 'R');
+						if (bootconf_load_slot_data("R.cfg", &slot) != 0) {
+							fatal("BOOT: failed to load recovery slot config\r\n");
+						}
+					}
+				} else if (bootconf_load_slot_data("R.cfg", &slot) != 0) {
+					fatal("BOOT: failed to load recovery slot config\r\n");
+				}
+			} else {
+				fatal("BOOT: failed to load recovery slot config\r\n");
+			}
 		}
 
 		image.initrd_size = 0; // Set by load_sdmmc()
@@ -213,9 +272,10 @@ int main(void)
 
 		sunxi_spi_disable(&sunxi_spi0);
 
+	_boot:
+
 #endif // CONFIG_SPI_NAND
 
-	_boot:
 		// The kernel will reset WDG
 		sunxi_wdg_set(3);
 

@@ -14,6 +14,7 @@ typedef struct {
 } slot_t;
 
 char	bootconf_get_slot(const char *filename);
-uint8_t bootconf_read_slot_data(const char *filename, slot_t *slot);
+bool	bootconf_is_slot_state_good(const char *filename);
+uint8_t bootconf_load_slot_data(const char *filename, slot_t *slot);
 
 #endif
