@@ -7,6 +7,7 @@
 #include "sunxi_sdhci.h"
 
 #define USART_DBG usart3_dbg
+#define USART_BAUDRATE 115200
 
 #define CONFIG_FATFS_CACHE_SIZE		 (CONFIG_DTB_LOAD_ADDR - SDRAM_BASE) // in bytes
 #define CONFIG_SDMMC_SPEED_TEST_SIZE 1024 // (unit: 512B sectors)

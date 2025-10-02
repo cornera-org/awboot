@@ -7,11 +7,6 @@
 #include "sunxi_wdg.h"
 #include "sdmmc.h"
 
-sunxi_usart_t usart_dbg = {
-	.id		 = 3,
-	.gpio_tx = {GPIO_PIN(PORTB, 6), GPIO_PERIPH_MUX7},
-	.gpio_rx = {GPIO_PIN(PORTB, 7), GPIO_PERIPH_MUX7},
-};
 
 sunxi_usart_t usart0_dbg = {
 	.id		 = 0,
@@ -133,7 +128,7 @@ void board_init()
 
 	board_set_led(LED_BOARD, 1);
 	board_set_led(LED_BUTTON, 1);
-	sunxi_usart_init(&usart_dbg, 115200);
+	sunxi_usart_init(&usart3_dbg, USART_BAUDRATE);
 	sunxi_wdg_init();
 
 	// We need to set the pin to 1 for MCU to detect fallin edge later on.

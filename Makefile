@@ -134,7 +134,18 @@ mkboot: build tools
 	tools/mksunxi $(TARGET)-fel.bin 8192
 
 boot-fel:
-	xfel ddr t113-s3
-	xfel write   0x00030000 awboot-fel.bin
-	xfel write32 0x42000024 0 # Reset kernel magic
+	@set -e; \
+	tmp=$$(mktemp); \
+	trap 'rm -f $$tmp' EXIT; \
+	len=$$(stat -c '%s' awboot-fel.bin); \
+	xfel ddr t113-s3; \
+	xfel write   0x00030000 awboot-fel.bin; \
+	xfel read    0x00030000 $$len $$tmp; \
+	if cmp -s awboot-fel.bin $$tmp; then \
+		echo "XFEL verify: payload matches memory"; \
+	else \
+		echo "XFEL verify: payload mismatch" >&2; \
+		exit 1; \
+	fi; \
+	xfel write32 0x42000024 0; \
 	xfel exec    0x00030000
