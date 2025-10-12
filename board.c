@@ -28,6 +28,7 @@ sunxi_spi_t sunxi_spi0 = {
 sdhci_t sdhci0 = {
 	.name	   = "sdhci0",
 	.reg	   = (sdhci_reg_t *)0x04020000,
+	.id	   = 0,
 	.voltage   = MMC_VDD_27_36,
 	.width	   = MMC_BUS_WIDTH_4,
 	.clock	   = MMC_CLK_50M,
@@ -41,18 +42,39 @@ sdhci_t sdhci0 = {
 	.gpio_d3   = {GPIO_PIN(PORTF, 4), GPIO_PERIPH_MUX2},
 };
 
-static const gpio_t led_board = GPIO_PIN(PORTD, 19);
-static const gpio_t led_btn	  = GPIO_PIN(PORTB, 5); // rev1.1 (PORTD, 18)
-static const gpio_t btn		  = GPIO_PIN(PORTB, 4); // rev1.1 (PORTD, 11)
+sdhci_t sdhci2 = {
+	.name	   = "sdhci2",
+	.reg	   = (sdhci_reg_t *)0x04022000,
+	.id	   = 2,
+	.voltage   = MMC_VDD_27_36,
+	.width	   = MMC_BUS_WIDTH_4,
+	.clock	   = MMC_CLK_50M_DDR,
+	.removable = 0,
+	.isspi	   = FALSE,
+	.gpio_clk  = {GPIO_PIN(PORTC, 2), GPIO_PERIPH_MUX3},
+	.gpio_cmd  = {GPIO_PIN(PORTC, 3), GPIO_PERIPH_MUX3},
+	.gpio_d0   = {GPIO_PIN(PORTC, 6), GPIO_PERIPH_MUX3},
+	.gpio_d1   = {GPIO_PIN(PORTC, 5), GPIO_PERIPH_MUX3},
+	.gpio_d2   = {GPIO_PIN(PORTC, 4), GPIO_PERIPH_MUX3},
+	.gpio_d3   = {GPIO_PIN(PORTC, 7), GPIO_PERIPH_MUX3},
+};
 
-static const gpio_t status	 = GPIO_PIN(PORTD, 5);
-static const gpio_t power_on = GPIO_PIN(PORTD, 6);
+static const gpio_t led_board = GPIO_PIN(PORTD, 18);
+static const gpio_t btn		  = GPIO_PIN(PORTE, 6);
 
-static const gpio_t phyaddr0 = GPIO_PIN(PORTE, 7);
-static const gpio_t phyaddr1 = GPIO_PIN(PORTE, 0);
-static const gpio_t phyaddr2 = GPIO_PIN(PORTE, 1);
-static const gpio_t phyaddr3 = GPIO_PIN(PORTE, 2);
-static const gpio_t phynrst	 = GPIO_PIN(PORTE, 11);
+static const gpio_t status	 = GPIO_PIN(PORTD, 22);
+static const gpio_t power_on = GPIO_PIN(PORTD, 21);
+
+static const gpio_t mmc_rst = GPIO_PIN(PORTF, 6);
+
+static void board_reset_mmc(void)
+{
+	/* Assert reset, wait, then deassert to guarantee a clean start */
+	sunxi_gpio_write(mmc_rst, 1);
+	mdelay(1);
+	sunxi_gpio_write(mmc_rst, 0);
+	mdelay(1);
+}
 
 static void output_init(const gpio_t gpio)
 {
@@ -63,6 +85,7 @@ static void output_init(const gpio_t gpio)
 static void intput_init(const gpio_t gpio)
 {
 	sunxi_gpio_init(gpio, GPIO_INPUT);
+  sunxi_gpio_set_pull(gpio, GPIO_PULL_UP);
 };
 
 void board_set_led(uint8_t num, uint8_t on)
@@ -71,9 +94,6 @@ void board_set_led(uint8_t num, uint8_t on)
 		case LED_BOARD:
 			sunxi_gpio_write(led_board, on);
 			break;
-		case LED_BUTTON:
-			sunxi_gpio_write(led_btn, on);
-			break;
 		default:
 			break;
 	}
@@ -81,12 +101,14 @@ void board_set_led(uint8_t num, uint8_t on)
 
 bool board_get_button()
 {
-	return !sunxi_gpio_read(btn);
+  // Active low
+	return sunxi_gpio_read(btn) == 0;
 }
 
 bool board_get_power_on()
 {
-	return sunxi_gpio_read(power_on);
+  // Active low
+	return sunxi_gpio_read(power_on) == 0;
 }
 
 void board_set_status(bool on)
@@ -97,30 +119,15 @@ void board_set_status(bool on)
 void board_init()
 {
 	output_init(led_board);
-	output_init(led_btn);
 	intput_init(btn);
 
 	output_init(status);
 	intput_init(power_on);
 
-	// Set eth phy address to 0
-	output_init(phyaddr0);
-	output_init(phyaddr1);
-	output_init(phyaddr2);
-	output_init(phyaddr3);
-	output_init(phynrst);
-
-	sunxi_gpio_set_pull(phyaddr0, GPIO_PULL_DOWN);
-	sunxi_gpio_set_pull(phyaddr1, GPIO_PULL_DOWN);
-	sunxi_gpio_set_pull(phyaddr2, GPIO_PULL_DOWN);
-	sunxi_gpio_set_pull(phyaddr3, GPIO_PULL_DOWN);
-
-	// Start PHY with addr 0
-	mdelay(2);
-	sunxi_gpio_write(phynrst, 1);
+	output_init(mmc_rst);
+	board_reset_mmc();
 
 	board_set_led(LED_BOARD, 1);
-	board_set_led(LED_BUTTON, 1);
 	sunxi_usart_init(&usart_dbg, 115200);
 	sunxi_wdg_init();
 
