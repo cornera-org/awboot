@@ -41,6 +41,9 @@ extern dram_para_t	 ddr_param;
 extern sunxi_usart_t usart_dbg;
 extern sunxi_spi_t	 sunxi_spi0;
 
+extern sdhci_t sdhci0;
+extern sdhci_t sdhci2;
+
 void board_init(void);
 void board_set_led(uint8_t num, uint8_t on);
 bool board_get_button(void);

@@ -217,6 +217,41 @@ timing mode
 #define DTO_MAX						200
 #define SUNXI_MMC_NTSR_MODE_SEL_NEW (0x1 << 31)
 
+static bool smhc_get_ccu_params(const sdhci_t *sdhci, volatile u32 **clk_cfg, u32 *gate_mask, u32 *reset_mask)
+{
+	if (!sdhci)
+		return false;
+
+	switch (sdhci->id) {
+		case 0:
+			if (clk_cfg)
+				*clk_cfg = &ccu->smhc0_clk_cfg;
+			if (gate_mask)
+				*gate_mask = CCU_MMC_BGR_SMHC0_GATE;
+			if (reset_mask)
+				*reset_mask = CCU_MMC_BGR_SMHC0_RST;
+			return true;
+		case 1:
+			if (clk_cfg)
+				*clk_cfg = &ccu->smhc1_clk_cfg;
+			if (gate_mask)
+				*gate_mask = CCU_MMC_BGR_SMHC1_GATE;
+			if (reset_mask)
+				*reset_mask = CCU_MMC_BGR_SMHC1_RST;
+			return true;
+		case 2:
+			if (clk_cfg)
+				*clk_cfg = &ccu->smhc2_clk_cfg;
+			if (gate_mask)
+				*gate_mask = CCU_MMC_BGR_SMHC2_GATE;
+			if (reset_mask)
+				*reset_mask = CCU_MMC_BGR_SMHC2_RST;
+			return true;
+		default:
+			return false;
+	}
+}
+
 static void set_read_timeout(sdhci_t *sdhci, u32 timeout)
 {
 	u32 rval	 = 0;
@@ -609,11 +644,17 @@ static int init_default_timing(sdhci_t *sdhci)
 	sdhci->odly[MMC_CLK_25M]	 = TM5_OUT_PH180;
 	sdhci->odly[MMC_CLK_50M]	 = TM5_OUT_PH180;
 	sdhci->odly[MMC_CLK_50M_DDR] = TM5_OUT_PH90;
+	sdhci->odly[MMC_CLK_100M]   = TM5_OUT_PH90;
+	sdhci->odly[MMC_CLK_150M]   = TM5_OUT_PH90;
+	sdhci->odly[MMC_CLK_200M]   = TM5_OUT_PH90;
 
 	sdhci->sdly[MMC_CLK_400K]	 = TM5_IN_PH180;
 	sdhci->sdly[MMC_CLK_25M]	 = TM5_IN_PH180;
 	sdhci->sdly[MMC_CLK_50M]	 = TM5_IN_PH90;
 	sdhci->sdly[MMC_CLK_50M_DDR] = TM5_IN_PH180;
+	sdhci->sdly[MMC_CLK_100M]   = TM5_IN_PH90;
+	sdhci->sdly[MMC_CLK_150M]   = TM5_IN_PH90;
+	sdhci->sdly[MMC_CLK_200M]   = TM5_IN_PH90;
 
 	return 0;
 }
@@ -622,18 +663,28 @@ static int config_delay(sdhci_t *sdhci)
 {
 	u32 rval, freq;
 	u8	odly, sdly;
+	volatile u32 *clk_cfg;
+
+	if (!smhc_get_ccu_params(sdhci, &clk_cfg, NULL, NULL)) {
+		error("SMHC: unsupported controller id %u\r\n", sdhci->id);
+		return -1;
+	}
 
 	freq = sdhci->clock;
+	if (freq >= SMHC_CLK_COUNT) {
+		error("SMHC: invalid timing index %u\r\n", freq);
+		return -1;
+	}
 
 	odly = sdhci->odly[freq];
 	sdly = sdhci->sdly[freq];
 
 	trace("SMHC: odly: %d   sldy: %d\r\n", odly, sdly);
 
-	ccu->smhc0_clk_cfg &= (~CCU_MMC_CTRL_ENABLE);
+	*clk_cfg &= (~CCU_MMC_CTRL_ENABLE);
 	sdhci->reg->drv_dl &= (~(0x3 << 16));
 	sdhci->reg->drv_dl |= (((odly & 0x1) << 16) | ((odly & 0x1) << 17));
-	ccu->smhc0_clk_cfg |= CCU_MMC_CTRL_ENABLE;
+	*clk_cfg |= CCU_MMC_CTRL_ENABLE;
 
 	rval = sdhci->reg->ntsr;
 	rval &= (~(0x3 << 8));
@@ -665,6 +716,18 @@ static bool update_card_clock(sdhci_t *sdhci)
 bool sdhci_set_clock(sdhci_t *sdhci, smhc_clk_t clock)
 {
 	u32 div, n, mod_hz, pll, pll_hz, hz;
+	volatile u32 *clk_cfg;
+	u32 gate_mask = 0;
+	u32 reset_mask = 0;
+	bool is_ddr;
+
+	if (!smhc_get_ccu_params(sdhci, &clk_cfg, &gate_mask, &reset_mask)) {
+		error("SMHC: unsupported controller id %u\r\n", sdhci->id);
+		return false;
+	}
+
+	sdhci->clock = clock;
+	is_ddr = (clock == MMC_CLK_50M_DDR);
 
 	switch (clock) {
 		case MMC_CLK_400K:
@@ -697,10 +760,8 @@ bool sdhci_set_clock(sdhci_t *sdhci, smhc_clk_t clock)
 		trace("SMHC: set clock to %.2fMHz\r\n", (f32)((f32)hz / 1000000.0));
 	}
 
-	if (sdhci->clock == MMC_CLK_50M_DDR)
-		mod_hz = hz * 4; /* 4xclk: DDR 4(HS); */
-	else
-		mod_hz = hz * 2; /* 2xclk: SDR 1/4; */
+	/* New timing mode requires doubling the module clock; DDR needs no extra multiplier */
+	mod_hz = hz * 2;
 
 	if (mod_hz <= 24000000) {
 		pll	   = CCU_MMC_CTRL_OSCM24;
@@ -733,17 +794,41 @@ bool sdhci_set_clock(sdhci_t *sdhci, smhc_clk_t clock)
 
 	sdhci->reg->ntsr |= SUNXI_MMC_NTSR_MODE_SEL_NEW;
 
-	ccu->smhc_gate_reset |= CCU_MMC_BGR_SMHC0_RST;
-	ccu->smhc0_clk_cfg &= (~CCU_MMC_CTRL_ENABLE);
-	ccu->smhc0_clk_cfg = pll | CCU_MMC_CTRL_N(n) | CCU_MMC_CTRL_M(div);
-	ccu->smhc0_clk_cfg |= CCU_MMC_CTRL_ENABLE;
-	ccu->smhc_gate_reset |= CCU_MMC_BGR_SMHC0_GATE;
+	if (gate_mask || reset_mask) {
+		u32 gate_ctrl = ccu->smhc_gate_reset;
+		if (gate_mask) {
+			gate_ctrl &= ~gate_mask;
+			ccu->smhc_gate_reset = gate_ctrl;
+		}
+
+		if (reset_mask) {
+			u32 reset_ctrl = gate_ctrl & ~reset_mask;
+			ccu->smhc_gate_reset = reset_ctrl;
+			udelay(2);
+			reset_ctrl |= reset_mask;
+			ccu->smhc_gate_reset = reset_ctrl;
+			gate_ctrl = reset_ctrl;
+		}
+
+		*clk_cfg &= (~CCU_MMC_CTRL_ENABLE);
+		*clk_cfg = pll | CCU_MMC_CTRL_N(n) | CCU_MMC_CTRL_M(div);
+		*clk_cfg |= CCU_MMC_CTRL_ENABLE;
+
+		if (gate_mask) {
+			gate_ctrl |= gate_mask;
+			ccu->smhc_gate_reset = gate_ctrl;
+		}
+	} else {
+		*clk_cfg &= (~CCU_MMC_CTRL_ENABLE);
+		*clk_cfg = pll | CCU_MMC_CTRL_N(n) | CCU_MMC_CTRL_M(div);
+		*clk_cfg |= CCU_MMC_CTRL_ENABLE;
+	}
 
 	sdhci->pclk = mod_hz;
 
 	sdhci->reg->clkcr |= SMHC_CLKCR_MASK_D0; // Mask D0 when updating
 	sdhci->reg->clkcr &= ~(0xff); // Clear div (set to 1)
-	if (sdhci->clock == MMC_CLK_50M_DDR) {
+	if (is_ddr) {
 		sdhci->reg->clkcr |= SMHC_CLKCR_CLOCK_DIV(2);
 	}
 	sdhci->reg->clkcr |= SMHC_CLKCR_CARD_CLOCK_ON; // Enable clock
@@ -751,9 +836,7 @@ bool sdhci_set_clock(sdhci_t *sdhci, smhc_clk_t clock)
 	if (!update_card_clock(sdhci))
 		return false;
 
-	config_delay(sdhci);
-
-	return true;
+	return (config_delay(sdhci) == 0);
 }
 
 int sunxi_sdhci_init(sdhci_t *sdhci)

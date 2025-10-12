@@ -52,6 +52,7 @@
 
 #define fatal(fmt, ...)                                               \
 	{                                                                 \
+    mdelay(300);                                                   \
 		sunxi_wdg_set(1);                                             \
 		message("[F] " fmt "restarting in 1s...\r\n", ##__VA_ARGS__); \
 		while (1) {                                                   \

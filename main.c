@@ -33,7 +33,7 @@ static int boot_image_setup(unsigned char *addr, unsigned int *entry)
 int main(void)
 {
 	unsigned int entry_point = 0;
-	uint32_t	 i;
+	uint32_t	 i = 0;
 	uint32_t	 memory_size;
 	uint32_t	 wait	   = 0;
 	char		 slot_name = 'R';
@@ -42,8 +42,8 @@ int main(void)
 	bool		 slot_valid[3];
 	char		 slots[3]	 = {'R', 'A', 'B'};
 	uint8_t		 btn_led_val = false;
-	board_init();
 	sunxi_clk_init();
+	board_init();
 
 	message("\r\n");
 	info("AWBoot r%u starting...\r\n", (u32)BUILD_REVISION);
@@ -108,12 +108,12 @@ int main(void)
 // Normal media boot
 #if defined(CONFIG_BOOT_SDCARD) || defined(CONFIG_BOOT_MMC)
 
-	if (sunxi_sdhci_init(&sdhci0) != 0) {
-		fatal("SMHC: %s controller init failed\r\n", sdhci0.name);
+	if (sunxi_sdhci_init(&sdhci2) != 0) {
+		fatal("SMHC: %s controller init failed\r\n", sdhci2.name);
 	} else {
-		info("SMHC: %s controller v%x initialized\r\n", sdhci0.name, sdhci0.reg->vers);
+		info("SMHC: %s controller v%x initialized\r\n", sdhci2.name, sdhci2.reg->vers);
 	}
-	if (sdmmc_init(&card0, &sdhci0) != 0) {
+	if (sdmmc_init(&card0, &sdhci2) != 0) {
 #ifdef CONFIG_BOOT_SPINAND
 		warning("SMHC: init failed, trying SPI\r\n");
 		goto _spi;
@@ -125,6 +125,12 @@ int main(void)
 		if (mount_sdmmc() != 0) {
 			fatal("SMHC: card mount failed\r\n");
 		};
+
+  while (1) {
+    mdelay(200);
+    i ^= 1;
+    board_set_led(LED_BOARD, i);
+  }
 
 		strcpy(filename + 1, ".state");
 
