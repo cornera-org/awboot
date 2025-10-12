@@ -15,7 +15,7 @@
 
 static void _memcpy(void *dst, const void *src, size_t len)
 {
-	unsigned char		  *cdst = dst;
+	unsigned char		*cdst = dst;
 	const unsigned char *csrc = src;
 	while (len--)
 		*cdst++ = *csrc++;
@@ -211,7 +211,7 @@ static int of_get_node_offset(void *blob, const char *name, int *offset)
 	int			 depth		  = 0;
 	unsigned int token;
 	unsigned int namelen = strlen(name);
-	char		 *nodename;
+	char		*nodename;
 	int			 ret;
 
 	/* find the root node*/
@@ -243,8 +243,8 @@ static int of_get_node_offset(void *blob, const char *name, int *offset)
 
 static int of_blob_move_dt_struct(void *blob, void *point, int oldlen, int newlen)
 {
-	void		 *dest = point + newlen;
-	void		 *src  = point + oldlen;
+	void		*dest = point + newlen;
+	void		*src  = point + oldlen;
 	unsigned int len  = (char *)blob + of_blob_data_size(blob) - (char *)point - oldlen;
 
 	int			 delta		   = newlen - oldlen;
@@ -266,7 +266,7 @@ static int of_blob_move_dt_string(void *blob, int newlen)
 {
 	void *point = (void *)((unsigned int)blob + of_get_offset_dt_strings(blob) + of_get_dt_strings_len(blob));
 
-	void		 *dest		= point + newlen;
+	void		*dest		= point + newlen;
 	unsigned int len		= (char *)blob + of_blob_data_size(blob) - (char *)point;
 	unsigned int stringslen = of_get_dt_strings_len(blob) + newlen;
 
@@ -415,7 +415,7 @@ static int of_add_property(void *blob, int nextoffset, const char *property_name
 static int of_update_property_value(void *blob, int property_offset, const void *value, int valuelen)
 {
 	int			   oldlen;
-	unsigned int	 *plen;
+	unsigned int  *plen;
 	unsigned char *pvalue;
 	void		  *point;
 	int			   ret;
@@ -480,10 +480,10 @@ int fdt_check_blob_valid(void *blob)
  */
 int fdt_update_bootargs(void *blob, const char *bootargs)
 {
-	int	  nodeoffset;
-	char *value	   = bootargs;
-	int	  valuelen = strlen(value) + 1;
-	int	  ret;
+	int			nodeoffset;
+	const char *value	 = bootargs;
+	int			valuelen = strlen(value) + 1;
+	int			ret;
 
 	ret = of_get_node_offset(blob, "chosen", &nodeoffset);
 	if (ret) {
@@ -495,7 +495,7 @@ int fdt_update_bootargs(void *blob, const char *bootargs)
 	 * if the property doesn't exit, add it
 	 * if the property exists, update it.
 	 */
-	ret = of_set_property(blob, nodeoffset, "bootargs", value, valuelen);
+	ret = of_set_property(blob, nodeoffset, "bootargs", (void *)value, valuelen);
 	if (ret) {
 		warning("fail to set bootargs property\r\n");
 		return ret;

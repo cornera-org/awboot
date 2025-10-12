@@ -1,10 +1,36 @@
 #include "common.h"
 #include "loaders.h"
 #include "board.h"
+#if CONFIG_BOOT_SPINAND
+#include "fdt.h"
+#endif
 
-#if defined(CONFIG_BOOT_SDCARD) || defined(CONFIG_BOOT_MMC)
+#if CONFIG_BOOT_SDCARD || CONFIG_BOOT_MMC
+
+#include "sdmmc.h"
 
 FATFS fs;
+
+void sdmmc_speed_test(void)
+{
+	u32 start = time_ms();
+	u32 test_time;
+	u32 kb_tested;
+	u32 kb_per_second;
+
+	sdmmc_blk_read(&card0, (u8 *)(SDRAM_BASE), 0, CONFIG_SDMMC_SPEED_TEST_SIZE);
+	test_time	  = time_ms() - start;
+	kb_tested	  = (CONFIG_SDMMC_SPEED_TEST_SIZE * 512U) / 1024U;
+	kb_per_second = (test_time == 0U) ? 0U : (CONFIG_SDMMC_SPEED_TEST_SIZE * 512U) / test_time;
+	if (kb_per_second < 1000) {
+		info("SDMMC: speedtest %" PRIu32 "KB in %" PRIu32 "ms at %" PRIu32 "KB/S\r\n", kb_tested, test_time,
+			 kb_per_second);
+	} else {
+		u32 mb_per_second = kb_per_second / 1024;
+		info("SDMMC: speedtest %" PRIu32 "KB in %" PRIu32 "ms at %" PRIu32 "MB/S\r\n", kb_tested, test_time,
+			 mb_per_second);
+	}
+}
 
 int mount_sdmmc()
 {
@@ -37,14 +63,12 @@ void unmount_sdmmc(void)
 
 int read_file(const char *filename, uint8_t *dest)
 {
-	FIL		 file;
-	UINT	 bytes_to_read = 0x1000000; // 16MB
-	UINT	 bytes_read;
-	UINT	 total_read = 0;
-	int		 ret;
-	FRESULT	 fret;
-	uint32_t start, time;
-
+	FIL		file;
+	UINT	bytes_to_read = 0x1000000; // 16MB
+	UINT	bytes_read;
+	UINT	total_read = 0;
+	int		ret;
+	FRESULT fret;
 	if (!filename) {
 		error("FATFS: empty filename\r\n");
 		return -1;
@@ -56,7 +80,9 @@ int read_file(const char *filename, uint8_t *dest)
 		return -1;
 	}
 
-	start = time_ms();
+#if LOG_LEVEL >= LOG_DEBUG
+	uint32_t start = time_ms();
+#endif
 
 	do {
 		bytes_read = 0;
@@ -72,9 +98,11 @@ int read_file(const char *filename, uint8_t *dest)
 
 	ret = (int)total_read;
 
-	time = time_ms() - start + 1;
-
-	debug("FATFS: %s read in %ums at %.2fMB/S\r\n", filename, time, (f32)(total_read / time) / 1024.0f);
+#if LOG_LEVEL >= LOG_DEBUG
+	uint32_t duration	= time_ms() - start + 1U;
+	f32		 throughput = ((f32)total_read / (f32)duration) / 1024.0f;
+	debug("FATFS: %s read in %" PRIu32 "ms at %.2fMB/S\r\n", filename, duration, throughput);
+#endif
 
 close:
 	fret = f_close(&file);
@@ -85,18 +113,11 @@ close:
 int load_sdmmc(image_info_t *image)
 {
 	int ret;
+
+#if LOG_LEVEL >= LOG_DEBUG
 	u32 start;
-
-#if defined(CONFIG_SDMMC_SPEED_TEST_SIZE) && LOG_LEVEL >= LOG_DEBUG
-	u32 test_time;
 	start = time_ms();
-	sdmmc_blk_read(&card0, (u8 *)(SDRAM_BASE), 0, CONFIG_SDMMC_SPEED_TEST_SIZE);
-	test_time = time_ms() - start;
-	debug("SDMMC: speedtest %uKB in %ums at %uKB/S\r\n", (CONFIG_SDMMC_SPEED_TEST_SIZE * 512) / 1024, test_time,
-		  (CONFIG_SDMMC_SPEED_TEST_SIZE * 512) / test_time);
-#endif // SDMMC_SPEED_TEST
-
-	start = time_ms();
+#endif // LOG_LEVEL >= LOG_DEBUG
 
 	info("FATFS: read %s addr=%x\r\n", image->of_filename, (unsigned int)image->dtb_dest);
 	ret = read_file(image->of_filename, image->dtb_dest);
@@ -120,13 +141,15 @@ int load_sdmmc(image_info_t *image)
 		}
 	}
 
-	debug("FATFS: done in %ums\r\n", time_ms() - start);
+#if LOG_LEVEL >= LOG_DEBUG
+	debug("FATFS: done in %" PRIu32 "ms\r\n", time_ms() - start);
+#endif
 
 	return 0;
 }
 #endif
 
-#ifdef CONFIG_BOOT_SPINAND
+#if CONFIG_BOOT_SPINAND
 int load_spi_nand(sunxi_spi_t *spi, image_info_t *image)
 {
 	linux_zimage_header_t *hdr;
@@ -138,7 +161,7 @@ int load_spi_nand(sunxi_spi_t *spi, image_info_t *image)
 
 	/* get dtb size and read */
 	spi_nand_read(spi, image->dtb_dest, CONFIG_SPINAND_DTB_ADDR, (uint32_t)sizeof(boot_param_header_t));
-	if (of_get_magic_number(image->dtb_dest) != OF_DT_MAGIC) {
+	if (fdt_check_blob_valid(image->dtb_dest) != 0) {
 		error("SPI-NAND: DTB verification failed\r\n");
 		return -1;
 	}

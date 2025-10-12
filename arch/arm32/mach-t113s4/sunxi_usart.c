@@ -1,6 +1,6 @@
 #include <stdarg.h>
 #include "io.h"
-#include "main.h"
+#include "common.h"
 #include "sunxi_usart.h"
 #include "reg-ccu.h"
 

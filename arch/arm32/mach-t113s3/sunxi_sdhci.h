@@ -110,14 +110,15 @@ typedef struct {
 } sdhci_idma_desc_t __attribute__((aligned(8)));
 
 typedef struct {
-	char		 *name;
+	char		*name;
 	sdhci_reg_t *reg;
 	u8			 id;
 	u32			 reset;
 
 	u32		   voltage;
 	u32		   width;
-	smhc_clk_t clock;
+	smhc_clk_t clock_active;
+	smhc_clk_t clock_wanted;
 	u32		   pclk;
 	u8		   odly[SMHC_CLK_COUNT];
 	u8		   sdly[SMHC_CLK_COUNT];

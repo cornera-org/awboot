@@ -4,7 +4,7 @@
 #include <stdlib.h>
 
 #define __ALIGN_MASK(x, mask) (((x) + (mask)) & ~(mask))
-#define ALIGN(x, a)			  __ALIGN_MASK((x), (typeof(x))(a)-1)
+#define ALIGN(x, a)			  __ALIGN_MASK((x), (typeof(x))(a) - 1)
 
 #if 0
 static inline uint32_t __swab32(uint32_t x)
@@ -20,7 +20,7 @@ static inline uint32_t __swab32(uint32_t x)
 #define le32_to_cpu(x) (x)
 #endif
 
-#define BROM_PAGE_SIZE	2048
+#define BROM_PAGE_SIZE 2048
 
 struct boot_head_t {
 	uint32_t instruction;
@@ -41,14 +41,15 @@ struct boot_head_t {
  * If we want to boot from a device with larger page size, we need to adjust
  * the image in flash so that only the 1st 2KB of each page is used.
  */
-static char* expand_pagesize(char *buffer, int *buflen, int pagesize)
+static char *expand_pagesize(char *buffer, int *buflen, int pagesize)
 {
-	char				 *buffer2;
-	int					offset, multiple;
+	char *buffer2;
+	int	  offset, multiple;
 
 	multiple = pagesize / BROM_PAGE_SIZE;
 
-	if (multiple == 1) return buffer;
+	if (multiple == 1)
+		return buffer;
 
 	buffer2 = malloc(*buflen * multiple);
 	memset(buffer2, 0, *buflen * multiple);
@@ -62,14 +63,13 @@ static char* expand_pagesize(char *buffer, int *buflen, int pagesize)
 	return buffer2;
 }
 
-
 int main(int argc, char *argv[])
 {
 	struct boot_head_t *h;
 	FILE			   *fp;
 	char			   *buffer;
 	int					buflen, filelen;
-	uint32_t			 *p;
+	uint32_t		   *p;
 	uint32_t			sum;
 	int					i, l, loop, padding, pagesize;
 
@@ -83,13 +83,12 @@ int main(int argc, char *argv[])
 
 	if (argc >= 4) {
 		pagesize = atoi(argv[3]);
-		if ((pagesize < 1) || (pagesize & (BROM_PAGE_SIZE-1))) {
+		if ((pagesize < 1) || (pagesize & (BROM_PAGE_SIZE - 1))) {
 			printf("pagesize must be multiple of 2048\n");
 			exit(1);
 		}
 		printf("pagesize: %d\n", pagesize);
-	}
-	else {
+	} else {
 		pagesize = BROM_PAGE_SIZE;
 	}
 

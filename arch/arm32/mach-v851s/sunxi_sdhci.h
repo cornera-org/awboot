@@ -108,7 +108,7 @@ typedef struct {
 } sdhci_idma_desc_t __attribute__((aligned(8)));
 
 typedef struct {
-	char		 *name;
+	char		*name;
 	sdhci_reg_t *reg;
 	u32			 reset;
 

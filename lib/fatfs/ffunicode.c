@@ -17669,7 +17669,7 @@ DWORD ff_wtoupper(/* Returns up-converted code point */
 				  DWORD uni /* Unicode code point to be up-converted */
 )
 {
-	const WORD	   *p;
+	const WORD		 *p;
 	WORD			  uc, bc, nc, cmd;
 	static const WORD cvt1[] = {
 		/* Compressed up conversion table for U+0000 - U+0FFF */

@@ -76,8 +76,8 @@ typedef DWORD LBA_t;
 #if FF_LBA64
 #error exFAT needs to be enabled when enable 64-bit LBA
 #endif
-typedef DWORD		  FSIZE_t;
-typedef DWORD		  LBA_t;
+typedef DWORD FSIZE_t;
+typedef DWORD LBA_t;
 #endif
 
 /* Type of path name strings on FatFs API (TCHAR) */
@@ -87,11 +87,11 @@ typedef WCHAR TCHAR;
 #define _T(x)	 L##x
 #define _TEXT(x) L##x
 #elif FF_USE_LFN && FF_LFN_UNICODE == 2 /* Unicode in UTF-8 encoding */
-typedef char		  TCHAR;
+typedef char TCHAR;
 #define _T(x)	 u8##x
 #define _TEXT(x) u8##x
 #elif FF_USE_LFN && FF_LFN_UNICODE == 3 /* Unicode in UTF-32 encoding */
-typedef DWORD		   TCHAR;
+typedef DWORD TCHAR;
 #define _T(x)	 U##x
 #define _TEXT(x) U##x
 #elif FF_USE_LFN && (FF_LFN_UNICODE < 0 || FF_LFN_UNICODE > 3)
@@ -171,7 +171,7 @@ typedef struct {
 	WORD   id; /* Hosting volume's mount ID */
 	BYTE   attr; /* Object attribute */
 	BYTE   stat; /* Object chain status (b1-0: =0:not contiguous, =2:contiguous, =3:fragmented in this session,
-					b2:sub-directory stretched) */
+			  b2:sub-directory stretched) */
 	DWORD	sclust; /* Object data start cluster (0:no cluster or root directory) */
 	FSIZE_t objsize; /* Object size (valid when sclust != 0) */
 #if FF_FS_EXFAT
@@ -214,7 +214,7 @@ typedef struct {
 	DWORD	dptr; /* Current read/write offset */
 	DWORD	clust; /* Current cluster */
 	LBA_t	sect; /* Current sector (0:Read operation has terminated) */
-	BYTE	 *dir; /* Pointer to the directory item in the win[] */
+	BYTE   *dir; /* Pointer to the directory item in the win[] */
 	BYTE	fn[12]; /* SFN (in/out) {body[8],ext[3],status[1]} */
 #if FF_USE_LFN
 	DWORD blk_ofs; /* Offset of current entry block being processed (0xFFFFFFFF:Invalid) */
@@ -235,7 +235,7 @@ typedef struct {
 	TCHAR altname[FF_SFN_BUF + 1]; /* Alternative file name */
 	TCHAR fname[FF_LFN_BUF + 1]; /* Primary file name */
 #else
-	 TCHAR fname[12 + 1]; /* File name */
+	TCHAR fname[12 + 1]; /* File name */
 #endif
 } FILINFO;
 

@@ -1,7 +1,7 @@
 #ifndef __SUNXI_USART_H__
 #define __SUNXI_USART_H__
 
-#include "main.h"
+#include "common.h"
 #include "sunxi_gpio.h"
 
 typedef struct {

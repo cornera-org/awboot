@@ -17,13 +17,13 @@ void *memchr(void *ptr, int value, size_t len);
 void *memmove(void *dest, const void *src, size_t count);
 
 size_t strlen(const char *str);
-char	 *strcpy(char *dst, const char *src);
-char	 *strncpy(char *dst, const char *src, size_t len);
-char	 *strcat(char *dst, const char *src);
+char  *strcpy(char *dst, const char *src);
+char  *strncpy(char *dst, const char *src, size_t len);
+char  *strcat(char *dst, const char *src);
 int	   strcmp(const char *p1, const char *p2);
 int	   strncmp(const char *p1, const char *p2, size_t len);
-char	 *strchr(const char *s, int c);
-char	 *strstr(const char *s, const char *what);
+char  *strchr(const char *s, int c);
+char  *strstr(const char *s, const char *what);
 int	   atoi(char *str);
 
 #endif /* #ifndef __STRING_H__ */

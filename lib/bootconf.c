@@ -1,6 +1,8 @@
 #include "bootconf.h"
 #include "loaders.h"
 
+#if CONFIG_BOOT_SDCARD || CONFIG_BOOT_MMC
+
 static char boot_cfg_buffer[512];
 
 // Copy value without line ending chars or leading spaces
@@ -161,3 +163,5 @@ uint8_t bootconf_load_slot_data(const char *filename, slot_t *slot)
 
 	return 0;
 }
+
+#endif /* CONFIG_BOOT_SDCARD || CONFIG_BOOT_MMC */

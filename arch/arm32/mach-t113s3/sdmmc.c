@@ -146,13 +146,13 @@ sdmmc_pdata_t card0;
 		const int	   __size = size;                                \
 		const uint32_t __mask = (__size < 32 ? 1 << __size : 0) - 1; \
 		const int	   __off  = 3 - ((start) / 32);                  \
-		const int	   __shft = (start)&31;                          \
+		const int	   __shft = (start) & 31;                        \
 		uint32_t	   __res;                                        \
                                                                      \
 		__res = resp[__off] >> __shft;                               \
 		if (__size + __shft > 32)                                    \
 			__res |= resp[__off - 1] << ((32 - __shft) % 32);        \
-		__res &__mask;                                               \
+		__res & __mask;                                              \
 	})
 
 static const unsigned tran_speed_unit[] = {
@@ -195,7 +195,7 @@ static bool enable_mmc_rstn(sdhci_t *hci, sdmmc_t *card)
 	return sdhci_transfer(hci, &cmd, NULL);
 }
 
-#ifdef CONFIG_BOOT_SDCARD
+#if CONFIG_BOOT_SDCARD
 static bool sd_send_if_cond(sdhci_t *hci, sdmmc_t *card)
 {
 	sdhci_cmd_t cmd = {0};
@@ -280,7 +280,7 @@ static bool sd_send_op_cond(sdhci_t *hci, sdmmc_t *card)
 }
 #endif
 
-#ifdef CONFIG_BOOT_MMC
+#if CONFIG_BOOT_MMC
 static bool mmc_send_op_cond(sdhci_t *hci, sdmmc_t *card)
 {
 	sdhci_cmd_t cmd		= {0};
@@ -411,9 +411,9 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 
 // Both SD & MMC: try SD first
 // Otherwise there's only one media type if enabled
-#ifdef CONFIG_BOOT_SDCARD
+#if CONFIG_BOOT_SDCARD
 	if (!sd_send_op_cond(hci, card)) {
-#ifdef CONFIG_BOOT_MMC
+#if CONFIG_BOOT_MMC
 		sdhci_reset(hci);
 		sdhci_set_clock(hci, MMC_CLK_400K);
 		sdhci_set_width(hci, MMC_BUS_WIDTH_1);
@@ -434,7 +434,7 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 #endif
 	}
 // Only MMC
-#elif defined(CONFIG_BOOT_MMC)
+#elif CONFIG_BOOT_MMC
 	// Workaround for eMMC starting in alternative boot mode
 	sdhci_reset(hci);
 	if (!sdhci_set_clock(hci, MMC_CLK_400K) || !sdhci_set_width(hci, MMC_BUS_WIDTH_1)) {
@@ -624,7 +624,7 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 	debug("SMHC: capacity %.1fGB\r\n", (f32)((f64)card->capacity / (f64)1000000000.0));
 
 	if (hci->isspi) {
-		if (!sdhci_set_clock(hci, min(card->tran_speed, hci->clock)) || !sdhci_set_width(hci, MMC_BUS_WIDTH_1)) {
+		if (!sdhci_set_clock(hci, min(card->tran_speed, hci->clock_wanted)) || !sdhci_set_width(hci, MMC_BUS_WIDTH_1)) {
 			error("SMHC: set clock/width failed\r\n");
 			return FALSE;
 		}
@@ -663,7 +663,7 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 
 			switch (hci->width) {
 				case MMC_BUS_WIDTH_4:
-					if (hci->clock == MMC_CLK_50M_DDR)
+					if (hci->clock_wanted == MMC_CLK_50M_DDR)
 						width = EXT_CSD_DDR_BUS_WIDTH_4;
 					else
 						width = EXT_CSD_BUS_WIDTH_4;
@@ -700,7 +700,7 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 
 			udelay(1000);
 		}
-		if (!sdhci_set_clock(hci, hci->clock) || !sdhci_set_width(hci, hci->width)) {
+		if (!sdhci_set_clock(hci, hci->clock_wanted) || !sdhci_set_width(hci, hci->width)) {
 			error("SMHC: set clock/width failed\r\n");
 			return FALSE;
 		}
@@ -731,18 +731,19 @@ uint64_t sdmmc_blk_read(sdmmc_pdata_t *data, uint8_t *buf, uint64_t blkno, uint6
 	return blkcnt;
 }
 
-int sdmmc_init(sdmmc_pdata_t *data, sdhci_t *hci) {
-    data->hci = hci;
-    data->online = FALSE;
-    int retries = 10;
+int sdmmc_init(sdmmc_pdata_t *data, sdhci_t *hci)
+{
+	data->hci	 = hci;
+	data->online = FALSE;
+	int retries	 = 10;
 
-    do {
-        if (sdmmc_detect(data->hci, &data->card) == TRUE) {
-            info("SHMC: %s card detected\r\n", data->card.version & SD_VERSION_SD ? "SD" : "MMC");
-            return 0;
-        }
-        mdelay(100);
-    } while (retries--);
+	do {
+		if (sdmmc_detect(data->hci, &data->card) == TRUE) {
+			info("SHMC: %s card detected\r\n", data->card.version & SD_VERSION_SD ? "SD" : "MMC");
+			return 0;
+		}
+		mdelay(100);
+	} while (retries--);
 
-    return -1;
+	return -1;
 }

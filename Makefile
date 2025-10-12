@@ -32,6 +32,22 @@ HOSTSTRIP=strip
 
 MAKE=make
 
+SUPPORTED_VARIANTS := spi sdmmc emmc all
+VARIANT ?= emmc
+comma := ,
+VARIANT_LIST := $(strip $(subst $(comma), ,$(VARIANT)))
+
+ifneq ($(filter all,$(VARIANT_LIST)),)
+BUILD_VARIANTS := $(SUPPORTED_VARIANTS)
+else
+BUILD_VARIANTS := $(VARIANT_LIST)
+endif
+
+INVALID_VARIANTS := $(filter-out $(SUPPORTED_VARIANTS),$(BUILD_VARIANTS))
+ifneq ($(INVALID_VARIANTS),)
+$(error Unknown VARIANT(s): $(INVALID_VARIANTS). Supported: $(SUPPORTED_VARIANTS))
+endif
+
 DTB ?= sun8i-t113-mangopi-dual.dtb
 KERNEL ?= zImage
 
@@ -54,8 +70,8 @@ git:
 build:: build_revision
 
 # $(1): variant name
-# $(2): values to remove from board.h
-define VARIENT =
+# $(2): key=value overrides applied to board.h
+define REGISTER_VARIANT =
 
 # Objects
 $(1)_OBJ_DIR = build-$(1)
@@ -99,7 +115,8 @@ $$($(1)_OBJS): $$($(1)_OBJ_DIR)/board.h
 $$($(1)_OBJ_DIR)/board.h: board.h
 	echo "  GEN   $$@"
 	mkdir -p $$(@D)
-	grep -v "$(2)" >$$@ <$$<
+	cp $$< $$@
+	$(foreach opt,$(2),sed -i "s/^#define $(word 1,$(subst =, ,$(opt))).*/#define $(word 1,$(subst =, ,$(opt))) $(word 2,$(subst =, ,$(opt)))/" $$@;)
 
 clean::
 	rm -rf $$($(1)_OBJ_DIR)
@@ -108,14 +125,24 @@ clean::
 
 endef
 
-# build spi-only image without sd/mmc
-$(eval $(call VARIENT,spi,CONFIG_BOOT_SDCARD\|CONFIG_BOOT_MMC))
+ifneq ($(filter spi,$(BUILD_VARIANTS)),)
+$(eval $(call REGISTER_VARIANT,spi,CONFIG_BOOT_SPINAND=1 CONFIG_BOOT_SDCARD=0 CONFIG_BOOT_MMC=0))
+endif
 
 # build sd/mmc only image without spi
-$(eval $(call VARIENT,sdmmc,CONFIG_BOOT_SPINAND))
+ifneq ($(filter sdmmc,$(BUILD_VARIANTS)),)
+$(eval $(call REGISTER_VARIANT,sdmmc,CONFIG_BOOT_SPINAND=0 CONFIG_BOOT_SDCARD=1 CONFIG_BOOT_MMC=1))
+endif
+
+# build emmc only image without spi
+ifneq ($(filter emmc,$(BUILD_VARIANTS)),)
+$(eval $(call REGISTER_VARIANT,emmc,CONFIG_BOOT_SPINAND=0 CONFIG_BOOT_SDCARD=0 CONFIG_BOOT_MMC=1))
+endif
 
 # build image with everything
-$(eval $(call VARIENT,all,XXXXXXXXX))
+ifneq ($(filter all,$(BUILD_VARIANTS)),)
+$(eval $(call REGISTER_VARIANT,all,CONFIG_BOOT_SPINAND=1 CONFIG_BOOT_SDCARD=1 CONFIG_BOOT_MMC=1))
+endif
 
 clean::
 	rm -f $(TARGET)-*.bin
@@ -132,24 +159,37 @@ tools:
 
 
 mkboot: build tools
+ifneq ($(filter spi,$(BUILD_VARIANTS)),)
 	echo "SPI:"
 	$(SIZE) build-spi/$(TARGET)-boot.elf
 	cp -f build-spi/$(TARGET)-boot.bin $(TARGET)-boot-spi.bin
 	cp -f build-spi/$(TARGET)-boot.bin $(TARGET)-boot-spi-4k.bin
 	tools/mksunxi $(TARGET)-boot-spi.bin 8192
 	tools/mksunxi $(TARGET)-boot-spi-4k.bin 8192 4096
+endif
 
+ifneq ($(filter sdmmc,$(BUILD_VARIANTS)),)
 	echo "SDMMC:"
 	$(SIZE) build-sdmmc/$(TARGET)-boot.elf
 	cp -f build-sdmmc/$(TARGET)-boot.bin $(TARGET)-boot-sd.bin
 	tools/mksunxi $(TARGET)-boot-sd.bin 512
+endif
 
+ifneq ($(filter emmc,$(BUILD_VARIANTS)),)
+	echo "eMMC:"
+	$(SIZE) build-emmc/$(TARGET)-boot.elf
+	cp -f build-emmc/$(TARGET)-boot.bin $(TARGET)-boot-emmc.bin
+	tools/mksunxi $(TARGET)-boot-emmc.bin 512
+endif
+
+ifneq ($(filter all,$(BUILD_VARIANTS)),)
 	echo "ALL:"
 	$(SIZE) build-all/$(TARGET)-boot.elf
 	cp -f build-all/$(TARGET)-boot.bin $(TARGET)-boot-all.bin
 	cp -f build-all/$(TARGET)-boot.bin $(TARGET)-fel.bin
 	tools/mksunxi $(TARGET)-fel.bin 512
 	tools/mksunxi $(TARGET)-boot-all.bin 8192
+endif
 
 spi-boot.img: mkboot
 	rm -f spi-boot.img
@@ -161,6 +201,6 @@ spi-boot.img: mkboot
 
 boot-fel:
 	xfel ddr t113-s3
-	xfel write   0x00030000 awboot-fel.bin
+	xfel write   0x00030000 build-emmc/awboot-fel.bin
 	xfel write32 0x42000024 0 # Reset kernel magic
 	xfel exec    0x00030000

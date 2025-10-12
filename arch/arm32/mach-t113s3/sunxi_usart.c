@@ -30,6 +30,8 @@ void sunxi_usart_init(const sunxi_usart_t *usart, uint32_t baudrate)
 	/* Config usart TXD and RXD pins */
 	sunxi_gpio_init(usart->gpio_tx.pin, usart->gpio_tx.mux);
 	sunxi_gpio_init(usart->gpio_rx.pin, usart->gpio_rx.mux);
+	sunxi_gpio_set_pull(usart->gpio_tx.pin, GPIO_PULL_UP);
+	sunxi_gpio_set_pull(usart->gpio_rx.pin, GPIO_PULL_UP);
 
 	/* Open the clock gate for usart */
 	addr = T113_CCU_BASE + CCU_USART_BGR_REG;
@@ -44,6 +46,8 @@ void sunxi_usart_init(const sunxi_usart_t *usart, uint32_t baudrate)
 	write32(addr, val);
 
 	div = 1500000 / baudrate;
+	if (div == 0)
+		div = 1;
 
 	// Configure baud rate
 	UART_LCR(usart->id) = (1 << 7) | 3;

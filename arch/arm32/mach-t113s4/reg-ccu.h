@@ -73,7 +73,7 @@
 #define CCU_RISCV_CFG_BGR_REG		 (0xd0c)
 
 /* MMC clock bit field */
-#define CCU_MMC_CTRL_M(x)		  ((x)-1)
+#define CCU_MMC_CTRL_M(x)		  ((x) - 1)
 #define CCU_MMC_CTRL_N(x)		  ((x) << 8)
 #define CCU_MMC_CTRL_OSCM24		  (0x0 << 24)
 #define CCU_MMC_CTRL_PLL6X1		  (0x1 << 24)

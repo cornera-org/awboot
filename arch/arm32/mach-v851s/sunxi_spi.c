@@ -145,7 +145,7 @@ typedef enum {
 	SPI_NAND_MFR_WINBOND	= 0xef,
 	SPI_NAND_MFR_GIGADEVICE = 0xc8,
 	SPI_NAND_MFR_MACRONIX	= 0xc2,
-	SPI_NAND_MFR_MICRON	= 0x2c,
+	SPI_NAND_MFR_MICRON		= 0x2c,
 	SPI_NAND_MFR_FORESEE	= 0xcd,
 } spi_mfr_id;
 
@@ -156,7 +156,7 @@ static const spi_nand_info_t spi_nand_infos[] = {
 	{	  "W25M02GV",	 {.mfr = SPI_NAND_MFR_WINBOND, .dev = 0xab21, 2}, 2048,	64, 64, 1024, 1, 2, SPI_IO_QUAD_RX},
 	{	  "W25N02KV",	 {.mfr = SPI_NAND_MFR_WINBOND, .dev = 0xaa22, 2}, 2048, 128, 64, 2048, 1, 1, SPI_IO_QUAD_RX},
 
- /* Gigadevice */
+	/* Gigadevice */
 	{ "GD5F1GQ4UAWxx", {.mfr = SPI_NAND_MFR_GIGADEVICE, .dev = 0x10, 1}, 2048,  64, 64, 1024, 1, 1, SPI_IO_QUAD_RX},
 	{ "GD5F1GQ5UExxG", {.mfr = SPI_NAND_MFR_GIGADEVICE, .dev = 0x51, 1}, 2048, 128, 64, 1024, 1, 1, SPI_IO_QUAD_RX},
 	{ "GD5F1GQ4UExIG", {.mfr = SPI_NAND_MFR_GIGADEVICE, .dev = 0xd1, 1}, 2048, 128, 64, 1024, 1, 1, SPI_IO_QUAD_RX},
@@ -171,7 +171,7 @@ static const spi_nand_info_t spi_nand_infos[] = {
 	{ "GD5F4GQ4UCxIG", {.mfr = SPI_NAND_MFR_GIGADEVICE, .dev = 0xb4, 1}, 4096, 256, 64, 2048, 1, 1, SPI_IO_QUAD_RX},
 	{ "GD5F4GQ4RCxIG", {.mfr = SPI_NAND_MFR_GIGADEVICE, .dev = 0xa4, 1}, 4096, 256, 64, 2048, 1, 1, SPI_IO_QUAD_RX},
 
- /* Macronix */
+	/* Macronix */
 	{	 "MX35LF1GE4AB",	 {.mfr = SPI_NAND_MFR_MACRONIX, .dev = 0x12, 1}, 2048,  64, 64, 1024, 1, 1, SPI_IO_DUAL_RX},
 	{	 "MX35LF1G24AD",	 {.mfr = SPI_NAND_MFR_MACRONIX, .dev = 0x14, 1}, 2048, 128, 64, 1024, 1, 1, SPI_IO_DUAL_RX},
 	{	 "MX31LF1GE4BC",	 {.mfr = SPI_NAND_MFR_MACRONIX, .dev = 0x1e, 1}, 2048,  64, 64, 1024, 1, 1, SPI_IO_DUAL_RX},
@@ -182,7 +182,7 @@ static const spi_nand_info_t spi_nand_infos[] = {
 	{	 "MX35LF4G24AD",	 {.mfr = SPI_NAND_MFR_MACRONIX, .dev = 0x35, 1}, 4096, 256, 64, 2048, 1, 1, SPI_IO_DUAL_RX},
 	{	 "MX35LF4GE4AD",	 {.mfr = SPI_NAND_MFR_MACRONIX, .dev = 0x37, 1}, 4096, 256, 64, 2048, 1, 1, SPI_IO_DUAL_RX},
 
- /* Micron */
+	/* Micron */
 	{"MT29F1G01AAADD",	   {.mfr = SPI_NAND_MFR_MICRON, .dev = 0x12, 1}, 2048,  64, 64, 1024, 1, 1, SPI_IO_DUAL_RX},
 	{"MT29F1G01ABAFD",	   {.mfr = SPI_NAND_MFR_MICRON, .dev = 0x14, 1}, 2048, 128, 64, 1024, 1, 1, SPI_IO_DUAL_RX},
 	{"MT29F2G01AAAED",	   {.mfr = SPI_NAND_MFR_MICRON, .dev = 0x9f, 1}, 2048,  64, 64, 2048, 2, 1, SPI_IO_DUAL_RX},
@@ -192,7 +192,7 @@ static const spi_nand_info_t spi_nand_infos[] = {
 	{"MT29F4G01ADAGD",	   {.mfr = SPI_NAND_MFR_MICRON, .dev = 0x36, 1}, 2048, 128, 64, 2048, 2, 2, SPI_IO_DUAL_RX},
 	{"MT29F8G01ADAFD",	   {.mfr = SPI_NAND_MFR_MICRON, .dev = 0x46, 1}, 4096, 256, 64, 2048, 1, 2, SPI_IO_DUAL_RX},
 
-	{"FS35SQA001G",	   {.mfr = SPI_NAND_MFR_FORESEE, .dev = 0x7171, 2}, 2048, 64, 64, 1024, 1, 1, SPI_IO_QUAD_RX},
+	{	 "FS35SQA001G",	{.mfr = SPI_NAND_MFR_FORESEE, .dev = 0x7171, 2}, 2048,  64, 64, 1024, 1, 1, SPI_IO_QUAD_RX},
 };
 
 sunxi_spi_t		*spip;
@@ -201,44 +201,44 @@ static u32		 spi_rx_dma_hd;
 
 /* SPI Clock Control Register Bit Fields & Masks,default:0x0000_0002 */
 #define SPI_CLK_CTL_CDR2_MASK 0xff /* Clock Divide Rate 2,master mode only : SPI_CLK = AHB_CLK/(2*(n+1)) */
-#define SPI_CLK_CTL_CDR2(div) (((div)&SPI_CLK_CTL_CDR2_MASK) << 0)
+#define SPI_CLK_CTL_CDR2(div) (((div) & SPI_CLK_CTL_CDR2_MASK) << 0)
 #define SPI_CLK_CTL_CDR1_MASK 0xf /* Clock Divide Rate 1,master mode only : SPI_CLK = AHB_CLK/2^n */
-#define SPI_CLK_CTL_CDR1(div) (((div)&SPI_CLK_CTL_CDR1_MASK) << 8)
+#define SPI_CLK_CTL_CDR1(div) (((div) & SPI_CLK_CTL_CDR1_MASK) << 8)
 #define SPI_CLK_CTL_DRS		  (0x1 << 12) /* Divide rate select,default,0:rate 1;1:rate 2 */
 
 #define SPI_MOD_CLK 300000000
 
 static uint32_t spi_set_clk(sunxi_spi_t *spi, u32 spi_clk, u32 mclk, u32 cdr2)
 {
-        uint32_t reg     = 0;
-        uint32_t div     = 1;
-        uint32_t src_clk = mclk;
-        uint32_t freq    = SPI_MOD_CLK;
+	uint32_t reg	 = 0;
+	uint32_t div	 = 1;
+	uint32_t src_clk = mclk;
+	uint32_t freq	 = SPI_MOD_CLK;
 
-        if (spi_clk != SPI_MOD_CLK) {
-                /* CDR2 */
-                if (cdr2) {
-                        div = mclk / (spi_clk * 2) - 1;
-                        reg |= SPI_CLK_CTL_CDR2(div) | SPI_CLK_CTL_DRS;
-                        debug("SPI: CDR2 - n = %lu\r\n", div);
-                        freq = mclk / (2 * ((div + 1)));
-                } else { /* CDR1 */
-                        while (src_clk > spi_clk) {
-                                div++;
-                                src_clk >>= 1;
-                        }
-                        reg |= SPI_CLK_CTL_CDR1(div);
-                        debug("SPI: CDR1 - n = %lu\r\n", div);
-                        freq = src_clk;
-                }
-        }
+	if (spi_clk != SPI_MOD_CLK) {
+		/* CDR2 */
+		if (cdr2) {
+			div = mclk / (spi_clk * 2) - 1;
+			reg |= SPI_CLK_CTL_CDR2(div) | SPI_CLK_CTL_DRS;
+			debug("SPI: CDR2 - n = %lu\r\n", div);
+			freq = mclk / (2 * ((div + 1)));
+		} else { /* CDR1 */
+			while (src_clk > spi_clk) {
+				div++;
+				src_clk >>= 1;
+			}
+			reg |= SPI_CLK_CTL_CDR1(div);
+			debug("SPI: CDR1 - n = %lu\r\n", div);
+			freq = src_clk;
+		}
+	}
 
-        debug("SPI: clock div=%u \r\n", div);
-        debug("SPI: set clock asked=%dMHz actual=%dMHz mclk=%dMHz\r\n", spi_clk / 1000000, freq / 1000000, mclk / 1000000);
+	debug("SPI: clock div=%u \r\n", div);
+	debug("SPI: set clock asked=%dMHz actual=%dMHz mclk=%dMHz\r\n", spi_clk / 1000000, freq / 1000000, mclk / 1000000);
 
-        write32(spi->base + SPI_CCR, reg);
+	write32(spi->base + SPI_CCR, reg);
 
-        return freq;
+	return freq;
 }
 
 static int spi_clk_init(uint32_t mod_clk)
@@ -246,11 +246,11 @@ static int spi_clk_init(uint32_t mod_clk)
 	uint32_t rval;
 
 	/* we use PERIPH_200M clock source */
-	if (SPI_MOD_CLK == 20000000000 ) {
-	    rval	 = (1U << 31) | (0x2 << 24) | (0 << 8) | 0;	/* gate enable | use PERIPH_200M */
+	if (SPI_MOD_CLK == 20000000000) {
+		rval = (1U << 31) | (0x2 << 24) | (0 << 8) | 0; /* gate enable | use PERIPH_200M */
 	} else {
-	    /* we use PERIPH_300M clock source */
-	    rval	 = (1U << 31) | (0x1 << 24) | (0 << 8) | 0;	/* gate enable | use PERIPH_300M */
+		/* we use PERIPH_300M clock source */
+		rval = (1U << 31) | (0x1 << 24) | (0 << 8) | 0; /* gate enable | use PERIPH_300M */
 	}
 	trace("SPI: parent_clk=%dMHz\r\n", SPI_MOD_CLK);
 
@@ -380,7 +380,6 @@ int sunxi_spi_init(sunxi_spi_t *spi)
 
 	spi_reset_fifo(spi);
 	spi_dma_init();
-
 
 	return 0;
 }
@@ -560,7 +559,6 @@ static int spi_nand_info(sunxi_spi_t *spi)
 	if (r < 0)
 		return r;
 
-
 	debug("rx: 0x%02x, 0x%02x, 0x%02x, 0x%02x\r\n", rx[0], rx[1], rx[2], rx[3]);
 
 	if (rx[0] == 0xff) {
@@ -653,7 +651,7 @@ int spi_nand_detect(sunxi_spi_t *spi)
 {
 	uint8_t val;
 
-//	spi_nand_reset(spi);
+	//	spi_nand_reset(spi);
 	spi_nand_wait_while_busy(spi);
 
 	if (spi_nand_info(spi) == 0) {

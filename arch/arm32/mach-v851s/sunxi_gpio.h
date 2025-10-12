@@ -23,7 +23,7 @@ enum {
 #define PORTE			 3
 #define PORTF			 4
 #define PORTH			 5
-#define SUNXI_GPIO_PORTS 	6
+#define SUNXI_GPIO_PORTS 6
 
 enum gpio_pull_t {
 	GPIO_PULL_UP   = 0,

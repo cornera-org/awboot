@@ -19,12 +19,13 @@
 #define CONFIG_DEFAULT_BOOT_CMD "console=ttyS3,115200 earlycon"
 #define CONFIG_BOOT_MAX_TRIES	2
 
-// #define CONFIG_BOOT_SPINAND
-// #define CONFIG_BOOT_SDCARD
-#define CONFIG_BOOT_MMC
+/* Boot source configuration flags (1 = enabled) */
+#define CONFIG_BOOT_SPINAND 0
+#define CONFIG_BOOT_SDCARD	0
+#define CONFIG_BOOT_MMC		1
 
-#define CONFIG_FATFS_CACHE_SIZE 36 // (unit: 512B sectors, multiples of 8 to match FAT's 4KB)
-// #define CONFIG_SDMMC_SPEED_TEST_SIZE 1024 // (unit: 512B sectors)
+#define CONFIG_FATFS_CACHE_SIZE		 36 // (unit: 512B sectors, multiples of 8 to match FAT's 4KB)
+#define CONFIG_SDMMC_SPEED_TEST_SIZE 4096 // (unit: 512B sectors)
 
 #define CONFIG_CPU_FREQ 1200000000
 
@@ -49,5 +50,7 @@ void board_set_led(uint8_t num, uint8_t on);
 bool board_get_button(void);
 void board_set_status(bool on);
 bool board_get_power_on(void);
+
+#define USART_DBG usart_dbg
 
 #endif

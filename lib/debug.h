@@ -34,7 +34,7 @@
 #define UNUSED_INFO __attribute__((__unused__))
 #endif
 
-#if LOG_LEVEL >= LOG_WARNING
+#if LOG_LEVEL >= LOG_WARN
 #define warning(fmt, ...) message("[W] " fmt, ##__VA_ARGS__)
 #define UNUSED_WARNING
 #else
@@ -52,7 +52,7 @@
 
 #define fatal(fmt, ...)                                               \
 	{                                                                 \
-    mdelay(300);                                                   \
+		mdelay(300);                                                  \
 		sunxi_wdg_set(1);                                             \
 		message("[F] " fmt "restarting in 1s...\r\n", ##__VA_ARGS__); \
 		while (1) {                                                   \

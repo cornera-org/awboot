@@ -1,11 +1,10 @@
-#include "main.h"
+#include "common.h"
 #include "board.h"
 #include "sunxi_gpio.h"
 #include "sunxi_sdhci.h"
 #include "sunxi_usart.h"
 #include "sunxi_spi.h"
 #include "sdmmc.h"
-
 
 sunxi_usart_t usart_dbg = {
 	.base	 = 0x02500800,

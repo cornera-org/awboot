@@ -26,7 +26,7 @@
  *
  */
 
-#include "main.h"
+#include "common.h"
 #include "sdmmc.h"
 #include "debug.h"
 #include "barrier.h"
@@ -255,7 +255,7 @@ static int prepare_dma(sdhci_t *sdhci, sdhci_data_t *data)
 {
 	sdhci_idma_desc_t *pdes		= sdhci->dma_desc;
 	u32				   byte_cnt = data->blksz * data->blkcnt;
-	u8				*buff;
+	u8				  *buff;
 	u32				   des_idx		 = 0;
 	u32				   buff_frag_num = 0;
 	u32				   remain;
@@ -630,19 +630,18 @@ static int config_delay(sdhci_t *sdhci)
 
 	trace("SMHC: odly: %d   sldy: %d\r\n", odly, sdly);
 
-//	ccu->smhc0_clk_cfg &= (~CCU_MMC_CTRL_ENABLE);
-	val  = read32(CCU_BASE + CCU_SMHC0_CLK_REG);
+	//	ccu->smhc0_clk_cfg &= (~CCU_MMC_CTRL_ENABLE);
+	val = read32(CCU_BASE + CCU_SMHC0_CLK_REG);
 	val &= (~CCU_MMC_CTRL_ENABLE);
 	write32(CCU_BASE + CCU_SMHC0_CLK_REG, val);
 
 	sdhci->reg->drv_dl &= (~(0x3 << 16));
 	sdhci->reg->drv_dl |= (((odly & 0x1) << 16) | ((odly & 0x1) << 17));
 
-//	ccu->smhc0_clk_cfg |= CCU_MMC_CTRL_ENABLE;
-	val  = read32(CCU_BASE + CCU_SMHC0_CLK_REG);
+	//	ccu->smhc0_clk_cfg |= CCU_MMC_CTRL_ENABLE;
+	val = read32(CCU_BASE + CCU_SMHC0_CLK_REG);
 	val |= CCU_MMC_CTRL_ENABLE;
 	write32(CCU_BASE + CCU_SMHC0_CLK_REG, val);
-
 
 	rval = sdhci->reg->ntsr;
 	rval &= (~(0x3 << 8));
@@ -741,13 +740,13 @@ bool sdhci_set_clock(sdhci_t *sdhci, smhc_clk_t clock)
 		return false;
 
 	sdhci->reg->ntsr |= SUNXI_MMC_NTSR_MODE_SEL_NEW;
-/*
-	ccu->smhc_gate_reset |= CCU_MMC_BGR_SMHC0_RST;
-	ccu->smhc0_clk_cfg &= (~CCU_MMC_CTRL_ENABLE);
-	ccu->smhc0_clk_cfg = pll | CCU_MMC_CTRL_N(n) | CCU_MMC_CTRL_M(div);
-	ccu->smhc0_clk_cfg |= CCU_MMC_CTRL_ENABLE;
-	ccu->smhc_gate_reset |= CCU_MMC_BGR_SMHC0_GATE;
-*/
+	/*
+		ccu->smhc_gate_reset |= CCU_MMC_BGR_SMHC0_RST;
+		ccu->smhc0_clk_cfg &= (~CCU_MMC_CTRL_ENABLE);
+		ccu->smhc0_clk_cfg = pll | CCU_MMC_CTRL_N(n) | CCU_MMC_CTRL_M(div);
+		ccu->smhc0_clk_cfg |= CCU_MMC_CTRL_ENABLE;
+		ccu->smhc_gate_reset |= CCU_MMC_BGR_SMHC0_GATE;
+	*/
 	val = read32(CCU_BASE + CCU_SMHC_BGR_REG);
 	val |= CCU_MMC_BGR_SMHC0_RST;
 	write32(CCU_BASE + CCU_SMHC_BGR_REG, val);

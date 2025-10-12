@@ -28,7 +28,7 @@ __extension__ typedef unsigned long long   __u64;
 /*
  * These aren't exported outside the kernel to avoid name space clashes
  */
-//#ifdef __KERNEL__
+// #ifdef __KERNEL__
 
 typedef signed char	  s8;
 typedef unsigned char u8;
@@ -37,7 +37,7 @@ typedef signed short   s16;
 typedef unsigned short u16;
 
 /* dont mix stdint and basic types, uint32_t and u32 are intermixed throughout code */
-typedef int32_t s32;
+typedef int32_t	 s32;
 typedef uint32_t u32;
 
 typedef signed long long   s64;
@@ -73,9 +73,9 @@ typedef unsigned long phys_size_t;
 #ifdef CONFIG_DMA_ADDR_T_64BIT
 typedef unsigned long long dma_addr_t;
 #else
-typedef u32			  dma_addr_t;
+typedef u32 dma_addr_t;
 #endif
 
-//#endif /* __KERNEL__ */
+// #endif /* __KERNEL__ */
 
 #endif

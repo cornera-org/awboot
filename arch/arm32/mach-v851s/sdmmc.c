@@ -26,7 +26,7 @@
  *
  */
 
-#include "main.h"
+#include "common.h"
 #include "debug.h"
 #include "sunxi_sdhci.h"
 #include "sdmmc.h"
@@ -146,13 +146,13 @@ sdmmc_pdata_t card0;
 		const int	   __size = size;                                \
 		const uint32_t __mask = (__size < 32 ? 1 << __size : 0) - 1; \
 		const int	   __off  = 3 - ((start) / 32);                  \
-		const int	   __shft = (start)&31;                          \
+		const int	   __shft = (start) & 31;                        \
 		uint32_t	   __res;                                        \
                                                                      \
 		__res = resp[__off] >> __shft;                               \
 		if (__size + __shft > 32)                                    \
 			__res |= resp[__off - 1] << ((32 - __shft) % 32);        \
-		__res &__mask;                                               \
+		__res & __mask;                                              \
 	})
 
 static const unsigned tran_speed_unit[] = {
@@ -166,6 +166,38 @@ static const unsigned char tran_speed_time[] = {
 	0, 10, 12, 13, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80,
 };
 
+static u32 sdmmc_clock_to_hz(smhc_clk_t clock)
+{
+	switch (clock) {
+		case MMC_CLK_400K:
+			return 400000U;
+		case MMC_CLK_25M:
+			return 25000000U;
+		case MMC_CLK_50M:
+		case MMC_CLK_50M_DDR:
+			return 50000000U;
+		case MMC_CLK_100M:
+			return 100000000U;
+		case MMC_CLK_150M:
+			return 150000000U;
+		case MMC_CLK_200M:
+			return 200000000U;
+		default:
+			return 400000U;
+	}
+}
+
+static smhc_clk_t sdmmc_select_clock(smhc_clk_t requested, u32 card_hz)
+{
+	if (card_hz == 0U)
+		return requested;
+
+	while (requested > MMC_CLK_400K && sdmmc_clock_to_hz(requested) > card_hz)
+		requested = (smhc_clk_t)((int)requested - 1);
+
+	return requested;
+}
+
 static bool go_idle_state(sdhci_t *hci)
 {
 	sdhci_cmd_t cmd = {0};
@@ -178,7 +210,7 @@ static bool go_idle_state(sdhci_t *hci)
 	return sdhci_transfer(hci, &cmd, NULL);
 }
 
-#ifdef CONFIG_BOOT_SDCARD
+#if CONFIG_BOOT_SDCARD
 static bool sd_send_if_cond(sdhci_t *hci, sdmmc_t *card)
 {
 	sdhci_cmd_t cmd = {0};
@@ -263,7 +295,7 @@ static bool sd_send_op_cond(sdhci_t *hci, sdmmc_t *card)
 }
 #endif
 
-#ifdef CONFIG_BOOT_MMC
+#if CONFIG_BOOT_MMC
 static bool mmc_send_op_cond(sdhci_t *hci, sdmmc_t *card)
 {
 	sdhci_cmd_t cmd		= {0};
@@ -284,7 +316,7 @@ static bool mmc_send_op_cond(sdhci_t *hci, sdmmc_t *card)
 		}
 		udelay(5000);
 	} while (!(cmd.response[0] & OCR_BUSY) && retries--);
-//	trace("SHMC: op_cond 0x%x\r\n", cmd.response[0]);
+	//	trace("SHMC: op_cond 0x%x\r\n", cmd.response[0]);
 
 	if (retries <= 0)
 		return FALSE;
@@ -373,12 +405,13 @@ static uint64_t sdmmc_read_blocks(sdhci_t *hci, sdmmc_t *card, uint8_t *buf, uin
 
 static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 {
-	sdhci_cmd_t	 cmd = {0};
-	sdhci_data_t dat = {0};
-	uint64_t	 csize, cmult;
-	uint32_t	 unit, time;
-	int			 width;
-	int			 status;
+	sdhci_cmd_t		 cmd = {0};
+	sdhci_data_t	 dat = {0};
+	uint64_t		 csize, cmult;
+	uint32_t		 unit, time;
+	int				 width;
+	int				 status;
+	const smhc_clk_t requested_clock = hci->clock;
 
 	sdhci_reset(hci);
 	if (!sdhci_set_clock(hci, MMC_CLK_400K) || !sdhci_set_width(hci, MMC_BUS_WIDTH_1)) {
@@ -394,9 +427,9 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 
 // Both SD & MMC: try SD first
 // Otherwise there's only one media type if enabled
-#ifdef CONFIG_BOOT_SDCARD
+#if CONFIG_BOOT_SDCARD
 	if (!sd_send_op_cond(hci, card)) {
-#ifdef CONFIG_BOOT_MMC
+#if CONFIG_BOOT_MMC
 		sdhci_reset(hci);
 		sdhci_set_clock(hci, MMC_CLK_400K);
 		sdhci_set_width(hci, MMC_BUS_WIDTH_1);
@@ -417,7 +450,7 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 #endif
 	}
 // Only MMC
-#elif defined(CONFIG_BOOT_MMC)
+#elif CONFIG_BOOT_MMC
 	// Workaround for eMMC starting in alternative boot mode
 	sdhci_reset(hci);
 	if (!sdhci_set_clock(hci, MMC_CLK_400K) || !sdhci_set_width(hci, MMC_BUS_WIDTH_1)) {
@@ -605,9 +638,11 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 	}
 	card->capacity *= 1 << UNSTUFF_BITS(card->csd, 80, 4);
 	debug("SMHC: capacity %.1fGB\r\n", (f32)((f64)card->capacity / (f64)1000000000.0));
+	hci->clock = requested_clock;
 
 	if (hci->isspi) {
-		if (!sdhci_set_clock(hci, min(card->tran_speed, hci->clock)) || !sdhci_set_width(hci, MMC_BUS_WIDTH_1)) {
+		smhc_clk_t spi_clock = sdmmc_select_clock(requested_clock, card->tran_speed);
+		if (!sdhci_set_clock(hci, spi_clock) || !sdhci_set_width(hci, MMC_BUS_WIDTH_1)) {
 			error("SMHC: set clock/width failed\r\n");
 			return FALSE;
 		}
