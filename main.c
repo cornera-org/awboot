@@ -90,8 +90,8 @@ int main(void)
 	bool		 slot_valid[3];
 	char		 slots[3]	 = {'R', 'A', 'B'};
 	uint8_t		 btn_led_val = false;
-	board_init();
 	sunxi_clk_init();
+  board_init();
 
 	message("\r\n");
 	info("AWBoot r%" PRIu32 " starting...\r\n", (u32)BUILD_REVISION);

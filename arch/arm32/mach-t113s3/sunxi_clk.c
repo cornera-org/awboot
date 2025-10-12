@@ -110,8 +110,11 @@ static void set_ahb(void)
 
 static void set_apb(void)
 {
-	write32(T113_CCU_BASE + CCU_APB0_CLK_REG, (2 << 0) | (1 << 8) | (0x03 << 24));
-	sdelay(1);
+  uint32_t config = (2 << 0) | (1 << 8) | (0x03 << 24); /* P=2, M=3, parent=PLL_PERI(1x) */
+
+  write32(T113_CCU_BASE + CCU_APB0_CLK_REG, config);
+  write32(T113_CCU_BASE + CCU_APB1_CLK_REG, config);
+  sdelay(1);
 }
 
 static void set_dma(void)
