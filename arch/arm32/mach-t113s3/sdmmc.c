@@ -118,6 +118,9 @@
 #define EXT_CSD_DDR_BUS_WIDTH_4 5 /* Card is in 4 bit DDR mode */
 #define EXT_CSD_DDR_BUS_WIDTH_8 6 /* Card is in 8 bit DDR mode */
 
+#define EXT_CSD_TIMING_BC	0
+#define EXT_CSD_TIMING_HS	1
+
 #define EXT_CSD_CARD_TYPE_26	   (1 << 0) /* Card can run at 26MHz */
 #define EXT_CSD_CARD_TYPE_52	   (1 << 1) /* Card can run at 52MHz */
 #define EXT_CSD_CARD_TYPE_MASK	   0x3F /* Mask out reserved bits */
@@ -435,18 +438,18 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 	}
 // Only MMC
 #elif CONFIG_BOOT_MMC
-	// Workaround for eMMC starting in alternative boot mode
-	sdhci_reset(hci);
-	if (!sdhci_set_clock(hci, MMC_CLK_400K) || !sdhci_set_width(hci, MMC_BUS_WIDTH_1)) {
-		error("SMHC: set clock/width failed\r\n");
-		return FALSE;
-	}
+	// // Workaround for eMMC starting in alternative boot mode
+	// sdhci_reset(hci);
+	// if (!sdhci_set_clock(hci, MMC_CLK_400K) || !sdhci_set_width(hci, MMC_BUS_WIDTH_1)) {
+	// 	error("SMHC: set clock/width failed\r\n");
+	// 	return FALSE;
+	// }
 
-	if (!go_idle_state(hci)) {
-		error("SMHC: set idle state failed\r\n");
-		return FALSE;
-	}
-	udelay(2000); // 1ms + 74 clocks @ 400KHz (185us)
+	// if (!go_idle_state(hci)) {
+	// 	error("SMHC: set idle state failed\r\n");
+	// 	return FALSE;
+	// }
+	// udelay(2000); // 1ms + 74 clocks @ 400KHz (185us)
 
 	if (!mmc_send_op_cond(hci, card)) {
 		debug("SMHC: MMC detect failed\r\n");
@@ -661,9 +664,34 @@ static bool sdmmc_detect(sdhci_t *hci, sdmmc_t *card)
 				debug("SHMC: eMMC hardware reset signal already enabled\r\n");
 			}
 
+			u8 card_type = card->extcsd[EXT_CSD_CARD_TYPE];
+			bool want_ddr = hci->clock_wanted == MMC_CLK_50M_DDR;
+
+			if (want_ddr && !(card_type & EXT_CSD_CARD_TYPE_DDR_52)) {
+				warning("SMHC: controller requested DDR but card does not advertise DDR support, falling back to high-speed SDR\r\n");
+				hci->clock_wanted = MMC_CLK_50M;
+				want_ddr = false;
+			}
+
+			if (hci->clock_wanted >= MMC_CLK_50M) {
+				if (!(card_type & (EXT_CSD_CARD_TYPE_52 | EXT_CSD_CARD_TYPE_DDR_52))) {
+					warning("SMHC: card does not advertise high-speed timing, using 25MHz\r\n");
+					hci->clock_wanted = MMC_CLK_25M;
+					want_ddr = false;
+				} else {
+					cmd.idx		 = SD_CMD_SWITCH_FUNC;
+					cmd.resptype = MMC_RSP_R1;
+					cmd.arg		 = (3 << 24) | (EXT_CSD_HS_TIMING << 16) | (EXT_CSD_TIMING_HS << 8) | EXT_CSD_CMD_SET_NORMAL;
+					if (!sdhci_transfer(hci, &cmd, NULL))
+						return FALSE;
+					udelay(1000);
+					card->extcsd[EXT_CSD_HS_TIMING] = EXT_CSD_TIMING_HS;
+				}
+			}
+
 			switch (hci->width) {
 				case MMC_BUS_WIDTH_4:
-					if (hci->clock_wanted == MMC_CLK_50M_DDR)
+					if (want_ddr)
 						width = EXT_CSD_DDR_BUS_WIDTH_4;
 					else
 						width = EXT_CSD_BUS_WIDTH_4;

@@ -777,7 +777,6 @@ int sunxi_sdhci_init(sdhci_t *sdhci)
 	sunxi_gpio_set_pull(sdhci->gpio_d3.pin, GPIO_PULL_UP);
 
 	init_default_timing(sdhci);
-	sdhci_set_clock(sdhci, MMC_CLK_400K);
 
 	sdhci->reg->gctrl = SMHC_GCTRL_HARDWARE_RESET;
 	sdhci->reg->rint  = 0xffffffff;

@@ -80,6 +80,7 @@
 #define CCU_MMC_CTRL_PLL6X2		  (0x2 << 24)
 #define CCU_MMC_CTRL_PLL_PERIPH1X CCU_MMC_CTRL_PLL6X1
 #define CCU_MMC_CTRL_PLL_PERIPH2X CCU_MMC_CTRL_PLL6X2
+#define CCU_MMC_CTRL_NEW_TIMING (0x1 << 30)
 #define CCU_MMC_CTRL_ENABLE		  (0x1 << 31)
 /* if doesn't have these delays */
 #define CCU_MMC_CTRL_OCLK_DLY(a) ((void)(a), 0)

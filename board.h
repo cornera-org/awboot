@@ -25,7 +25,7 @@
 #define CONFIG_BOOT_MMC		1
 
 #define CONFIG_FATFS_CACHE_SIZE		 36 // (unit: 512B sectors, multiples of 8 to match FAT's 4KB)
-#define CONFIG_SDMMC_SPEED_TEST_SIZE 4096 // (unit: 512B sectors)
+#define CONFIG_SDMMC_SPEED_TEST_SIZE 2048 // (unit: 512B sectors)
 
 #define CONFIG_CPU_FREQ 1200000000
 
