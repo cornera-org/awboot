@@ -32,7 +32,7 @@ HOSTSTRIP=strip
 
 MAKE=make
 
-SUPPORTED_VARIANTS := spi sdmmc emmc all
+SUPPORTED_VARIANTS := fel spi sdmmc emmc all
 VARIANT ?= emmc
 comma := ,
 VARIANT_LIST := $(strip $(subst $(comma), ,$(VARIANT)))
@@ -125,6 +125,11 @@ clean::
 
 endef
 
+# build image with no storage support
+ifneq ($(filter fel,$(BUILD_VARIANTS)),)
+$(eval $(call REGISTER_VARIANT,fel,CONFIG_BOOT_SPINAND=0 CONFIG_BOOT_SDCARD=0 CONFIG_BOOT_MMC=0))
+endif
+
 ifneq ($(filter spi,$(BUILD_VARIANTS)),)
 $(eval $(call REGISTER_VARIANT,spi,CONFIG_BOOT_SPINAND=1 CONFIG_BOOT_SDCARD=0 CONFIG_BOOT_MMC=0))
 endif
@@ -159,6 +164,13 @@ tools:
 
 
 mkboot: build tools
+ifneq ($(filter fel,$(BUILD_VARIANTS)),)
+	echo "FEL:"
+	$(SIZE) build-fel/$(TARGET)-boot.elf
+	cp -f build-fel/$(TARGET)-boot.bin $(TARGET)-boot-fel.bin
+	tools/mksunxi $(TARGET)-boot-fel.bin 512
+endif
+
 ifneq ($(filter spi,$(BUILD_VARIANTS)),)
 	echo "SPI:"
 	$(SIZE) build-spi/$(TARGET)-boot.elf
@@ -201,6 +213,6 @@ spi-boot.img: mkboot
 
 boot-fel:
 	xfel ddr t113-s3
-	xfel write   0x00030000 build-emmc/awboot-fel.bin
+	xfel write   0x00030000 build-fel/awboot-fel.bin
 	xfel write32 0x42000024 0 # Reset kernel magic
 	xfel exec    0x00030000
