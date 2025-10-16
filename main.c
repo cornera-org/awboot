@@ -355,7 +355,6 @@ int main(void)
 
 	info("booting linux...\r\n");
 	board_set_led(LED_BOARD, 0);
-	board_set_led(LED_BUTTON, 1);
 
 	arm32_mmu_disable();
 	arm32_dcache_disable();
