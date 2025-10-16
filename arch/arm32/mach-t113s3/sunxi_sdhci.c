@@ -769,7 +769,6 @@ static int config_delay(sdhci_t *sdhci)
         return -1;
       }
     } while (!(calib & SDXC_CAL_DONE));
-    uint32_t calibration_time = time_us() - timeout;
 
     delay = (calib >> SDXC_CAL_DL_SHIFT) & SDXC_CAL_DL_MASK;
     if (!delay)
@@ -781,7 +780,7 @@ static int config_delay(sdhci_t *sdhci)
     calib |= (delay << SDXC_CAL_DL_SW_SHIFT) | SDXC_CAL_DL_SW_EN;
     sdhci->reg->samp_dl = calib;
 
-    debug("SMHC: calibration complete (raw=0x%08" PRIx32 ", delay=%" PRIu32 ") in %" PRIu32 " us\r\n", calib, delay, calibration_time);
+    debug("SMHC: calibration complete (raw=0x%08" PRIx32 ", delay=%" PRIu32 ") in %" PRIu32 " us\r\n", calib, delay, time_us() - timeout);
   }
 
 	return 0;
