@@ -15,7 +15,7 @@
 
 image_info_t image;
 
-static char cmd_line[128];
+static char cmd_line[128] = {0};
 
 #if CONFIG_BOOT_SDCARD || CONFIG_BOOT_MMC
 static char	  filename[16];
@@ -322,6 +322,10 @@ int main(void)
 		fatal("boot setup failed\r\n");
 	}
 
+#if !CONFIG_BOOT_SPINAND && !CONFIG_BOOT_SDCARD && !CONFIG_BOOT_MMC
+	cmd_line[0] = '\0'; 
+#endif
+
 	if (strlen(cmd_line) > 0) {
 		debug("BOOT: args %s\r\n", cmd_line);
 		if (fdt_update_bootargs(image.dtb_dest, cmd_line)) {
@@ -337,11 +341,11 @@ int main(void)
 
 	if (image.initrd_dest) {
 		if (fdt_update_initrd(image.dtb_dest, (uint32_t)image.initrd_dest,
-							  (uint32_t)(image.initrd_dest + image.initrd_size))) {
+								(uint32_t)(image.initrd_dest + image.initrd_size))) {
 			error("BOOT: Failed to set initrd address\r\n");
 		} else {
 			debug("BOOT: Set initrd to %p-%p\r\n", (void *)image.initrd_dest,
-				  (void *)(image.initrd_dest + image.initrd_size));
+					(void *)(image.initrd_dest + image.initrd_size));
 		}
 	}
 
