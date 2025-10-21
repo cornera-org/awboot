@@ -38,6 +38,7 @@ SEARCH_DIR(.)
 MEMORY
 {
   ram   (rwx) : ORIGIN = __RAM_BASE, LENGTH = 96K /* A1 + DSP0 IRAM + DSP0 DRAM0. 128K on boot mode, 96K on FEL mode */
+  ddr   (rwx) : ORIGIN = 0x40000000, LENGTH = 128M
 }
 
 /* The stack size used by the application. NOTE: you need to adjust according to your application. */

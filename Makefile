@@ -217,3 +217,9 @@ boot-fel:
 	xfel write   0x00030000 build-fel/awboot-fel.bin
 	xfel write32 0x42000024 0 # Reset kernel magic
 	xfel exec    0x00030000
+
+boot-emmc:
+	xfel ddr t113-s3
+	xfel write   0x00030000 build-emmc/awboot-fel.bin
+	xfel write32 0x42000024 0 # Reset kernel magic
+	xfel exec    0x00030000

@@ -11,6 +11,74 @@
 
 FATFS fs;
 
+#ifndef CLTBL_DWORDS
+#define CLTBL_DWORDS 2000U
+#endif
+
+#ifndef READ_CHUNK
+#define READ_CHUNK (32U * 1024U)
+#endif
+
+static FRESULT read_stream(const char *path, void (*consume)(const uint8_t *, UINT))
+{
+	FRESULT fret;
+	FIL	file;
+	UINT	bytes_read = 0U;
+
+	if ((path == NULL) || (consume == NULL))
+		return FR_INVALID_PARAMETER;
+
+	fret = f_open(&file, path, FA_READ);
+	if (fret != FR_OK)
+		return fret;
+
+	static DWORD cltbl[CLTBL_DWORDS];
+	cltbl[0]    = CLTBL_DWORDS;
+	file.cltbl  = cltbl;
+	fret = f_lseek(&file, CREATE_LINKMAP);
+	if (fret == FR_NOT_ENOUGH_CORE) {
+		f_close(&file);
+		return fret;
+	}
+	if (fret != FR_OK) {
+		f_close(&file);
+		return fret;
+	}
+
+	static uint8_t buf[READ_CHUNK];
+	FRESULT     read_result = FR_OK;
+	do {
+		fret = f_read(&file, buf, READ_CHUNK, &bytes_read);
+		if (fret != FR_OK) {
+			read_result = fret;
+			break;
+		}
+		if (bytes_read == 0U)
+			break;
+		consume(buf, bytes_read);
+	} while (bytes_read == READ_CHUNK);
+
+	file.cltbl = NULL;
+	FRESULT close_result = f_close(&file);
+	if (read_result != FR_OK)
+		return read_result;
+	return close_result;
+}
+
+typedef struct {
+	uint8_t *dest;
+	u32	 total;
+} read_copy_state_t;
+
+static read_copy_state_t read_copy_state;
+
+static void read_copy_consume(const uint8_t *buf, UINT len)
+{
+	memcpy(read_copy_state.dest, buf, (size_t)len);
+	read_copy_state.dest += (size_t)len;
+	read_copy_state.total += (u32)len;
+}
+
 void sdmmc_speed_test(void)
 {
 	u32 start = time_ms();
@@ -63,51 +131,41 @@ void unmount_sdmmc(void)
 
 int read_file(const char *filename, uint8_t *dest)
 {
-	FIL		file;
-	UINT	bytes_to_read = 0x1000000; // 16MB
-	UINT	bytes_read;
-	UINT	total_read = 0;
-	int		ret;
-	FRESULT fret;
 	if (!filename) {
 		error("FATFS: empty filename\r\n");
 		return -1;
 	}
-
-	fret = f_open(&file, filename, FA_OPEN_EXISTING | FA_READ);
-	if (fret != FR_OK) {
-		error("FATFS: file open: [%s]: error %d\r\n", filename, fret);
+	if (!dest) {
+		error("FATFS: empty destination\r\n");
 		return -1;
 	}
 
 #if LOG_LEVEL >= LOG_DEBUG
-	uint32_t start = time_ms();
+	u32 start = time_ms();
 #endif
 
-	do {
-		bytes_read = 0;
-		fret	   = f_read(&file, (void *)(dest), bytes_to_read, &bytes_read);
-		if (fret != FR_OK) {
-			error("FATFS: file read error %d\r\n", fret);
-			ret = -1;
-			goto close;
-		}
-		dest += bytes_to_read;
-		total_read += bytes_read;
-	} while (bytes_read >= bytes_to_read && fret == FR_OK);
+	read_copy_state.dest  = dest;
+	read_copy_state.total = 0U;
 
-	ret = (int)total_read;
+	FRESULT fret = read_stream(filename, read_copy_consume);
+	if (fret != FR_OK) {
+		read_copy_state.dest  = NULL;
+		read_copy_state.total = 0U;
+		error("FATFS: file read: [%s]: error %d\r\n", filename, fret);
+		return -1;
+	}
+
+	u32 total_bytes = read_copy_state.total;
 
 #if LOG_LEVEL >= LOG_DEBUG
-	uint32_t duration	= time_ms() - start + 1U;
-	f32		 throughput = ((f32)total_read / (f32)duration) / 1024.0f;
+	u32 duration	 = time_ms() - start + 1U;
+	f32 throughput = ((f32)total_bytes / (f32)duration) / 1024.0f;
 	debug("FATFS: %s read in %" PRIu32 "ms at %.2fMB/S\r\n", filename, duration, throughput);
 #endif
 
-close:
-	fret = f_close(&file);
-
-	return ret;
+	read_copy_state.dest  = NULL;
+	read_copy_state.total = 0U;
+	return (int)total_bytes;
 }
 
 int load_sdmmc(image_info_t *image)
