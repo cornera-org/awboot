@@ -27,6 +27,7 @@
 #define __dram_head_h__
 
 #define SDRAM_BASE (0x40000000)
+#define SDRAM_TOP  (0x48000000)
 
 enum sunxi_dram_type {
 	SUNXI_DRAM_TYPE_DDR2   = 2,

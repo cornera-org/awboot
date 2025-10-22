@@ -1,4 +1,5 @@
 #include "common.h"
+#include "dram.h"
 #include "fdt.h"
 #include "sunxi_clk.h"
 #include "sunxi_wdg.h"
@@ -11,6 +12,86 @@
 #include "loaders.h"
 #if CONFIG_BOOT_SPINAND
 #include "sunxi_dma.h"
+#endif
+
+static bool range_in_sdram(uint32_t start, uint32_t size)
+{
+	const uint64_t base	 = (uint64_t)SDRAM_BASE;
+	const uint64_t top	 = (uint64_t)SDRAM_TOP;
+	const uint64_t start64 = (uint64_t)start;
+	const uint64_t end	 = start64 + (uint64_t)size;
+
+	return (start64 >= base) && (end <= top) && (end >= start64);
+}
+
+#if !CONFIG_BOOT_SDCARD && !CONFIG_BOOT_MMC && !CONFIG_BOOT_SPINAND
+static inline uint32_t fel_mailbox_read(uint32_t addr)
+{
+	return *((volatile uint32_t *)addr);
+}
+
+static bool addr_in_sdram(uint32_t addr)
+{
+	const uint64_t base = (uint64_t)SDRAM_BASE;
+	const uint64_t top	= (uint64_t)SDRAM_TOP;
+	const uint64_t pos	= (uint64_t)addr;
+
+	return (pos >= base) && (pos < top);
+}
+
+static void apply_fel_mailboxes(image_info_t *img)
+{
+	const uint32_t kernel_addr	 = fel_mailbox_read(CONFIG_MAIL_KERNEL_ADDR_ADDR);
+	const uint32_t dtb_addr	  = fel_mailbox_read(CONFIG_MAIL_DTB_ADDR_ADDR);
+	const uint32_t initrd_size	 = fel_mailbox_read(CONFIG_MAIL_INITRD_SIZE_ADDR);
+	const uint32_t initrd_start   = fel_mailbox_read(CONFIG_MAIL_INITRD_START_ADDR);
+	uint64_t	initrd_end_64 = (uint64_t)initrd_start + (uint64_t)initrd_size;
+
+	if (kernel_addr != 0U) {
+		if (!addr_in_sdram(kernel_addr)) {
+			fatal("FEL: kernel addr 0x%08" PRIx32 " outside SDRAM\r\n", kernel_addr);
+		}
+		img->kernel_dest = (u8 *)kernel_addr;
+	}
+
+	if (dtb_addr != 0U) {
+		if (!addr_in_sdram(dtb_addr)) {
+			fatal("FEL: dtb addr 0x%08" PRIx32 " outside SDRAM\r\n", dtb_addr);
+		}
+		img->dtb_dest = (u8 *)dtb_addr;
+	}
+
+	if (initrd_size != 0U) {
+		if (initrd_size > CONFIG_INITRAMFS_MAX_SIZE) {
+			fatal("FEL: initrd size %" PRIu32 " exceeds max %" PRIu32 "\r\n",
+			      initrd_size, (uint32_t)CONFIG_INITRAMFS_MAX_SIZE);
+		}
+		if (initrd_start == 0U) {
+			fatal("FEL: initrd start missing\r\n");
+		}
+		if ((CONFIG_INITRD_ALIGNMENT != 0U) &&
+			((initrd_start & (CONFIG_INITRD_ALIGNMENT - 1U)) != 0U)) {
+			warning("FEL: initrd start 0x%08" PRIx32 " not %u-byte aligned\r\n",
+				initrd_start, CONFIG_INITRD_ALIGNMENT);
+		}
+		if (!range_in_sdram(initrd_start, initrd_size)) {
+			fatal("FEL: initrd 0x%08" PRIx32 "-0x%08" PRIx32 " outside SDRAM\r\n",
+			      initrd_start, (uint32_t)initrd_end_64);
+		}
+		if ((dtb_addr != 0U) && (initrd_end_64 > (uint64_t)dtb_addr)) {
+			fatal("FEL: initrd overlaps DTB (initrd end 0x%08" PRIx32 ", dtb @ 0x%08" PRIx32 ")\r\n",
+			      (uint32_t)initrd_end_64, dtb_addr);
+		}
+		img->initrd_dest = (u8 *)initrd_start;
+		img->initrd_size = initrd_size;
+	}
+
+	info("FEL: kernel@0x%08" PRIx32 " dtb@0x%08" PRIx32 " initrd@0x%08" PRIx32 " (%" PRIu32 " bytes)\r\n",
+	     (uint32_t)(uintptr_t)img->kernel_dest,
+	     (uint32_t)(uintptr_t)img->dtb_dest,
+	     (uint32_t)(uintptr_t)img->initrd_dest,
+	     (uint32_t)(uintptr_t)img->initrd_size);
+}
 #endif
 
 image_info_t image;
@@ -123,7 +204,6 @@ int main(void)
 
 	image.dtb_dest	  = (u8 *)CONFIG_DTB_LOAD_ADDR;
 	image.kernel_dest = (u8 *)CONFIG_KERNEL_LOAD_ADDR;
-	image.initrd_dest = (u8 *)CONFIG_INITRAMFS_LOAD_ADDR;
 
 // Normal media boot
 #if CONFIG_BOOT_SDCARD || CONFIG_BOOT_MMC
@@ -259,8 +339,7 @@ int main(void)
 #else // 100% Fel boot
 	info("BOOT: FEL mode\r\n");
 
-	// This value is copied via xfel
-	image.initrd_size = *(uint32_t *)(0x45000000);
+	apply_fel_mailboxes(&image);
 
 	strcpy(cmd_line, CONFIG_DEFAULT_BOOT_CMD);
 #endif
@@ -329,24 +408,49 @@ int main(void)
 	if (strlen(cmd_line) > 0) {
 		debug("BOOT: args %s\r\n", cmd_line);
 		if (fdt_update_bootargs(image.dtb_dest, cmd_line)) {
-			error("BOOT: Failed to set boot args\r\n");
+			fatal("BOOT: Failed to set boot args\r\n");
 		}
 	}
 
 	if (fdt_update_memory(image.dtb_dest, SDRAM_BASE, memory_size)) {
-		error("BOOT: Failed to set memory size\r\n");
+		fatal("BOOT: Failed to set memory size\r\n");
 	} else {
 		debug("BOOT: Set memory size to 0x%" PRIx32 "\r\n", memory_size);
 	}
 
-	if (image.initrd_dest) {
-		if (fdt_update_initrd(image.dtb_dest, (uint32_t)image.initrd_dest,
-								(uint32_t)(image.initrd_dest + image.initrd_size))) {
-			error("BOOT: Failed to set initrd address\r\n");
-		} else {
-			debug("BOOT: Set initrd to %p-%p\r\n", (void *)image.initrd_dest,
-					(void *)(image.initrd_dest + image.initrd_size));
+	if ((image.initrd_size > 0U) && (image.initrd_dest == NULL)) {
+		image.initrd_dest = (u8 *)(SDRAM_TOP - image.initrd_size);
+	}
+
+	if (image.initrd_size > 0U) {
+		if (image.initrd_size > CONFIG_INITRAMFS_MAX_SIZE) {
+			fatal("BOOT: bad initrd size (%u)\r\n", image.initrd_size);
 		}
+
+		const uintptr_t initrd_start = (uintptr_t)image.initrd_dest;
+		const uintptr_t initrd_end   = initrd_start + (uintptr_t)image.initrd_size;
+
+		if (!range_in_sdram((uint32_t)initrd_start, image.initrd_size)) {
+			fatal("BOOT: initrd range 0x%08" PRIx32 "-0x%08" PRIx32 " invalid\r\n",
+			      (uint32_t)initrd_start, (uint32_t)initrd_end);
+		}
+
+		if ((CONFIG_INITRD_ALIGNMENT != 0U) &&
+			((initrd_start & (CONFIG_INITRD_ALIGNMENT - 1U)) != 0U)) {
+			warning("BOOT: initrd start 0x%08" PRIx32 " not %u-byte aligned\r\n",
+				(uint32_t)initrd_start, CONFIG_INITRD_ALIGNMENT);
+		}
+
+		if (fdt_update_initrd(image.dtb_dest, (uint32_t)image.initrd_dest,
+					(uint32_t)(image.initrd_dest + image.initrd_size))) {
+			fatal("BOOT: Failed to set initrd address\r\n");
+		} else {
+			debug("BOOT: Set initrd to 0x%08" PRIx32 "->0x%08" PRIx32 "\r\n",
+			      (uint32_t)image.initrd_dest,
+			      (uint32_t)(image.initrd_dest + image.initrd_size));
+		}
+	} else {
+		image.initrd_dest = NULL;
 	}
 
 #if CONFIG_BOOT_SDCARD || CONFIG_BOOT_MMC

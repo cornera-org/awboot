@@ -467,6 +467,45 @@ static int of_set_property(void *blob, int nodeoffset, const char *property_name
 	return 0;
 }
 
+static unsigned int of_get_property_cells(void *blob, int nodeoffset, const char *property_name)
+{
+	int			 property_offset;
+	unsigned int	len;
+	unsigned int	cells = (sizeof(uintptr_t) > 4U) ? 2U : 1U;
+
+	if (of_get_property_offset_by_name(blob, nodeoffset, property_name, &property_offset) != 0) {
+		return cells;
+	}
+
+	unsigned int *plen = (unsigned int *)of_dt_struct_offset(blob, property_offset + 4);
+	len = swap_uint32(*plen);
+
+	if (len == 8U) {
+		return 2U;
+	}
+	if (len == 4U) {
+		return 1U;
+	}
+
+	return cells;
+}
+
+static void of_encode_cells_be(uint8_t *dst, unsigned int cells, uint64_t value)
+{
+	if (cells > 1U) {
+		uint32_t hi = (uint32_t)(value >> 32);
+		uint32_t lo = (uint32_t)(value & 0xffffffffU);
+		hi = swap_uint32(hi);
+		lo = swap_uint32(lo);
+		_memcpy(dst, &hi, sizeof(hi));
+		_memcpy(dst + sizeof(hi), &lo, sizeof(lo));
+	} else {
+		uint32_t val32 = (uint32_t)(value & 0xffffffffU);
+		val32 = swap_uint32(val32);
+		_memcpy(dst, &val32, sizeof(val32));
+	}
+}
+
 /* ---------------------------------------------------- */
 
 int fdt_check_blob_valid(void *blob)
@@ -480,10 +519,8 @@ int fdt_check_blob_valid(void *blob)
  */
 int fdt_update_bootargs(void *blob, const char *bootargs)
 {
-	int			nodeoffset;
-	const char *value	 = bootargs;
-	int			valuelen = strlen(value) + 1;
-	int			ret;
+	int nodeoffset;
+	int ret;
 
 	ret = of_get_node_offset(blob, "chosen", &nodeoffset);
 	if (ret) {
@@ -495,7 +532,7 @@ int fdt_update_bootargs(void *blob, const char *bootargs)
 	 * if the property doesn't exit, add it
 	 * if the property exists, update it.
 	 */
-	ret = of_set_property(blob, nodeoffset, "bootargs", (void *)value, valuelen);
+	ret = of_set_property(blob, nodeoffset, "bootargs", (void *)bootargs, strlen(bootargs));
 	if (ret) {
 		warning("fail to set bootargs property\r\n");
 		return ret;
@@ -510,8 +547,16 @@ int fdt_update_bootargs(void *blob, const char *bootargs)
 int fdt_update_initrd(void *blob, uint32_t start, uint32_t end)
 {
 	int			 nodeoffset;
-	unsigned int data;
 	int			 ret;
+	unsigned int start_cells;
+	unsigned int end_cells;
+	uint8_t	 start_buf[8];
+	uint8_t	 end_buf[8];
+
+	if (start == 0U || end == 0U || end <= start) {
+		warning("DT: invalid initrd range start=0x%08" PRIx32 " end=0x%08" PRIx32 "\r\n", start, end);
+		return -1;
+	}
 
 	ret = of_get_node_offset(blob, "chosen", &nodeoffset);
 	if (ret) {
@@ -519,15 +564,28 @@ int fdt_update_initrd(void *blob, uint32_t start, uint32_t end)
 		return ret;
 	}
 
-	data = swap_uint32(start);
-	ret	 = of_set_property(blob, nodeoffset, "linux,initrd-start", &data, sizeof(data));
+	start_cells = of_get_property_cells(blob, nodeoffset, "linux,initrd-start");
+	end_cells   = of_get_property_cells(blob, nodeoffset, "linux,initrd-end");
+
+	if (start_cells > 2U) {
+		start_cells = 2U;
+	}
+	if (end_cells > 2U) {
+		end_cells = 2U;
+	}
+
+	of_encode_cells_be(start_buf, start_cells, (uint64_t)start);
+	of_encode_cells_be(end_buf, end_cells, (uint64_t)end);
+
+	ret = of_set_property(blob, nodeoffset, "linux,initrd-start", start_buf,
+				  (int)(start_cells * sizeof(uint32_t)));
 	if (ret) {
 		warning("DT: could not set linux,initrd-start property\r\n");
 		return ret;
 	}
 
-	data = swap_uint32(end);
-	ret	 = of_set_property(blob, nodeoffset, "linux,initrd-end", &data, sizeof(data));
+	ret = of_set_property(blob, nodeoffset, "linux,initrd-end", end_buf,
+				  (int)(end_cells * sizeof(uint32_t)));
 	if (ret) {
 		warning("DT: could not set linux,initrd-end property\r\n");
 		return ret;
