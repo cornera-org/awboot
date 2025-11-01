@@ -83,6 +83,8 @@ static inline void arm32_icache_disable(void)
 }
 
 void arm32_invalidate_icache_btb(void);
+void arm32_enter_nonsecure(void (*entry)(int, int, unsigned int),
+                           unsigned int arg0, unsigned int arg1, unsigned int arg2);
 
 #ifdef __cplusplus
 }

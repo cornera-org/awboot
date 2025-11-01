@@ -1,5 +1,8 @@
 #include <arch/arm32/include/linkage.h>
 
+.syntax unified
+.arm
+
 #define CONFIG_NBOOT_STACK	0x38000
 
 #define  ARMV7_USR_MODE        0x10
@@ -19,8 +22,31 @@
 .set ABT_STACK_SZ,  0x400
 .set UND_STACK_SZ,  0x400
 .set FIQ_STACK_SZ,  0x100
+.set MON_STACK_SZ,  0x200
 
 .extern arm32_fault_stub
+.extern psci_handle_smc
+
+.section .monitor_vectors, "ax", %progbits
+	.align 5
+.globl psci_monitor_vector_table
+psci_monitor_vector_table:
+psci_monitor_reset:
+	b .
+psci_monitor_undef:
+	b .
+psci_smc_vector:
+	b psci_smc_entry
+psci_monitor_prefetch:
+	b .
+psci_monitor_data:
+	b .
+psci_monitor_unused:
+	b .
+psci_monitor_irq:
+	b .
+psci_monitor_fiq:
+	b .
 
 .section .rodata
 	.align 2
@@ -154,6 +180,9 @@ copy_vectors_done:
 .globl init_banked_stacks
 init_banked_stacks:
 	ldr   r0, =__stack_srv_end
+	sub   r0, r0, #MON_STACK_SZ
+	cps   #0x16
+	mov   sp, r0
 	sub   r0, r0, #IRQ_STACK_SZ
 	cps   #0x12
 	mov   sp, r0
@@ -330,3 +359,43 @@ arm_vector_fiq_trampoline:
 	save_regs
 	bl arm32_do_fiq
 	restore_regs
+
+	.align 5
+psci_smc_entry:
+	stmdb sp!, {r4-r7, lr}
+	bl psci_handle_smc
+	ldmia sp!, {r4-r7, lr}
+	movs pc, lr
+
+	.align 3
+	.thumb
+	.thumb_func
+.globl arm32_enter_nonsecure
+arm32_enter_nonsecure:
+	bx pc
+	nop
+	.align 2
+	.arm
+arm32_enter_nonsecure_arm:
+	mov r12, r0			@ preserve entry address
+	mov r0, r1			@ arg0
+	mov r1, r2			@ arg1
+	mov r2, r3			@ arg2
+	cpsid aif
+	dsb sy
+	isb
+	mrc p15, 0, r3, c1, c1, 0
+	bic r3, r3, #0x4a
+	orr r3, r3, #(0x31)
+	orr r3, r3, #(1 << 8) @ HCE enable
+	mcr p15, 0, r3, c1, c1, 0
+	isb
+	@ copy secure SVC stack to non-secure SVC stack
+	mov r5, sp
+	mcr p15, 0, r5, c13, c0, 2
+	mov r4, r12
+	mov lr, r12
+	mov r3, #0
+	mov r5, #(ARMV7_SVC_MODE | ARMV7_IRQ_MASK | ARMV7_FIQ_MASK)
+	msr spsr_cxsf, r5
+	movs pc, lr

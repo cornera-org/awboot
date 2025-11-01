@@ -42,7 +42,7 @@ MEMORY
 }
 
 /* The stack size used by the application. NOTE: you need to adjust according to your application. */
-STACK_SIZE = 0x1000; /* 4KB */
+STACK_SIZE = 0x1800; /* 6KB */
 
 ENTRY(reset)
 
@@ -59,6 +59,13 @@ SECTIONS
     } > ram
 
     . = ALIGN(4);
+
+	.monitor_vectors :
+	{
+		. = ALIGN(32);
+		KEEP(*(.monitor_vectors))
+		. = ALIGN(4);
+	} > ram
 
     .ARM.exidx : {
         __exidx_start = .;

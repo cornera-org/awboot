@@ -19,6 +19,8 @@ SRCS	+=  $(SOC)/sunxi_gpio.c
 SRCS	+=  $(SOC)/sunxi_clk.c
 SRCS	+=  $(SOC)/exception.c
 SRCS	+=  $(SOC)/sunxi_wdg.c
+SRCS	+=  $(SOC)/psci.c
+SRCS	+=  $(SOC)/sunxi_security.c
 
 USE_SPI = $(shell grep -E "^\#define CONFIG_BOOT_SPI" board.h)
 ifneq ($(USE_SPI),)
