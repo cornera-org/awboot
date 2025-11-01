@@ -10,6 +10,7 @@
 #include "barrier.h"
 #include "bootconf.h"
 #include "loaders.h"
+#include "psci.h"
 #if CONFIG_BOOT_SPINAND
 #include "sunxi_dma.h"
 #endif
@@ -143,6 +144,8 @@ int main(void)
 	message("\r\n");
 	info("AWBoot r%" PRIu32 " starting...\r\n", (u32)BUILD_REVISION);
 
+  psci_init();
+
 	uint32_t clk_fail = sunxi_clk_get_fail_addr();
 	if (clk_fail != 0U) {
 		warning("CLK: init timeout at 0x%08" PRIx32 "\r\n", clk_fail);
@@ -150,8 +153,6 @@ int main(void)
 
 	memory_size = sunxi_dram_init();
 	info("DRAM init done: %" PRIu32 " MiB\r\n", memory_size >> 20);
-
-	void (*kernel_entry)(int zero, int arch, unsigned int params);
 
 #ifdef CONFIG_ENABLE_CPU_FREQ_DUMP
 	sunxi_clk_dump();
@@ -469,8 +470,10 @@ int main(void)
 	arm32_icache_disable();
 	arm32_interrupt_disable();
 
-	kernel_entry = (void (*)(int, int, unsigned int))entry_point;
-	kernel_entry(0, ~0, (unsigned int)image.dtb_dest);
+  debug("BOOT: kernel entry 0x%08" PRIx32 " dtb 0x%08" PRIx32 "\r\n",
+        (uint32_t)entry_point, (uint32_t)(uintptr_t)image.dtb_dest);
+	psci_enter_non_secure((uint32_t)entry_point, 0U, ~0U, (uint32_t)image.dtb_dest);
+	fatal("psci_enter_non_secure returned\r\n");
 
 	return 0;
 }

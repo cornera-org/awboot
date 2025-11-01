@@ -21,6 +21,7 @@
 .set FIQ_STACK_SZ,  0x100
 
 .extern arm32_fault_stub
+.extern psci_smc_handler
 
 .section .rodata
 	.align 2
@@ -273,6 +274,15 @@ __vector_table_end:
 	.align 5
 arm_vector_undefined_trampoline:
 	sub lr, lr, #4
+	push {r0-r3}
+	ldr r0, [lr]
+	bic r1, r0, #0xf
+	ldr r2, =(0xf << 16)
+	bic r1, r1, r2
+	ldr r3, =0xe1400070
+	cmp r1, r3
+	beq 1f
+	pop {r0-r3}
 	save_regs
 	mov r2, r0
 	ldr r0, =fault_str_undef
@@ -281,6 +291,15 @@ arm_vector_undefined_trampoline:
 	mov r0, r2
 	bl arm32_do_undefined_instruction
 	restore_regs
+	b 2f
+1:
+	pop {r0-r3}
+	add lr, lr, #4
+	push {r4-r11}
+	bl psci_smc_handler
+	pop {r4-r11}
+	movs pc, lr
+2:
 
 	.align 5
 arm_vector_software_trampoline:

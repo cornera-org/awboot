@@ -26,9 +26,12 @@
  *
  */
 
+#include <inttypes.h>
 #include <arm32.h>
 #include "debug.h"
 #include "common.h"
+#include "sunxi_gic.h"
+#include "io.h"
 
 struct arm_regs_t {
 	uint32_t esp;
@@ -86,8 +89,44 @@ void arm32_do_data_abort(struct arm_regs_t *regs)
 	fatal("data_abort\r\n");
 }
 
+extern volatile uint32_t psci_ns_entered;
+
 void arm32_do_irq(struct arm_regs_t *regs)
 {
+	uint32_t iar = read32(SUNXI_GICC_BASE + GICC_IAR);
+	uint32_t irq = iar & 0x3ffU;
+	uint32_t gicc_ctlr  = read32(SUNXI_GICC_BASE + GICC_CTLR);
+	uint32_t gicc_pmr   = read32(SUNXI_GICC_BASE + GICC_PMR);
+	uint32_t gicc_bpr   = read32(SUNXI_GICC_BASE + GICC_BPR);
+	uint32_t gicc_hppir = read32(SUNXI_GICC_BASE + GICC_HPPIR);
+	uint32_t gicc_rpr   = read32(SUNXI_GICC_BASE + GICC_RPR);
+	uint32_t gicd_ctlr  = read32(SUNXI_GICD_BASE + GICD_CTLR);
+	uint32_t gicd_ispend0 = read32(SUNXI_GICD_BASE + GICD_ISPENDR(0));
+	uint32_t gicd_ispend1 = read32(SUNXI_GICD_BASE + GICD_ISPENDR(1));
+	uint32_t gicd_isact0  = read32(SUNXI_GICD_BASE + GICD_ISACTIVER(0));
+	uint32_t gicd_isact1  = read32(SUNXI_GICD_BASE + GICD_ISACTIVER(1));
+
+	debug("IRQ: GICC_CTLR=0x%08" PRIx32 " PMR=0x%08" PRIx32 " BPR=0x%08" PRIx32
+	      " HPPIR=0x%08" PRIx32 " RPR=0x%08" PRIx32 "\r\n",
+	      gicc_ctlr, gicc_pmr, gicc_bpr, gicc_hppir, gicc_rpr);
+	debug("IRQ: GICD_CTLR=0x%08" PRIx32 " ISPENDR0=0x%08" PRIx32 " ISPENDR1=0x%08" PRIx32
+	      " ISACTIVER0=0x%08" PRIx32 " ISACTIVER1=0x%08" PRIx32 "\r\n",
+	      gicd_ctlr, gicd_ispend0, gicd_ispend1, gicd_isact0, gicd_isact1);
+
+	if (psci_ns_entered) {
+		if (irq < 1022U) {
+			uint32_t bank = irq >> 5;
+			uint32_t mask = (uint32_t)1U << (irq & 0x1fU);
+			write32(SUNXI_GICD_BASE + GICD_ICENABLER(bank), mask);
+			write32(SUNXI_GICD_BASE + GICD_ICPENDR(bank), mask);
+			write32(SUNXI_GICD_BASE + GICD_ICACTIVER(bank), mask);
+		}
+		write32(SUNXI_GICC_BASE + GICC_EOIR, iar);
+		debug("IRQ: suppressed IRQ%" PRIu32 " after PSCI hand-off\r\n", irq);
+		return;
+	}
+
+	write32(SUNXI_GICC_BASE + GICC_EOIR, iar);
 	show_regs(regs);
 	// regs->pc += 4;
 	fatal("undefined IRQ\r\n");

@@ -5,8 +5,8 @@
 
 #define T113_R_CCU_BASE (0x07010000)
 
-#define R_CCU_BIT_RST BIT(0)
-#define R_CCU_BIT_EN  BIT(16)
+#define R_CCU_BIT_EN  BIT(0)
+#define R_CCU_BIT_RST BIT(16)
 
 /* PRCM Register List */
 #define CPUS_CFG		 0x0000
