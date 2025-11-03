@@ -4,7 +4,6 @@
 .arm
 
 #define CONFIG_NBOOT_STACK	0x38000
-
 #define  ARMV7_USR_MODE        0x10
 #define  ARMV7_FIQ_MODE        0x11
 #define  ARMV7_IRQ_MODE        0x12
@@ -17,35 +16,94 @@
 #define  ARMV7_FIQ_MASK        0x40
 #define  ARMV7_IRQ_MASK        0x80
 
+#define PSCI_MON_REASON_UNDEF   0xE0
+#define PSCI_MON_REASON_PREFETCH 0xE1
+#define PSCI_MON_REASON_DATA    0xE2
+#define PSCI_MON_REASON_IRQ     0xE3
+#define PSCI_MON_REASON_FIQ     0xE4
+#define PSCI_MON_REASON_RESET   0xE5
+
+#ifndef MACH_T113S3_HAS_VIRTUAL_COUNTER
+#define MACH_T113S3_HAS_VIRTUAL_COUNTER 0
+#endif
+
 /* Reserve stack slices for each privileged mode */
 .set IRQ_STACK_SZ,  0x400
 .set ABT_STACK_SZ,  0x400
 .set UND_STACK_SZ,  0x400
 .set FIQ_STACK_SZ,  0x100
 .set MON_STACK_SZ,  0x200
-
 .extern arm32_fault_stub
 .extern psci_handle_smc
+.extern psci_ns_stage_phys_value
+.extern psci_cpu_tramp_trace
+
+
+.macro psci_monitor_log reason
+	ldr r0, =psci_cpu_tramp_trace
+	mov r1, #\reason
+	str r1, [r0, #8]
+	ldr r0, =psci_monitor_diag
+	str r1, [r0]
+	mrs r2, spsr_all
+	str r2, [r0, #4]
+	mov r2, lr
+	str r2, [r0, #8]
+	mrc p15, 0, r2, c5, c0, 1
+	str r2, [r0, #12]
+	mrc p15, 0, r2, c6, c0, 2
+	str r2, [r0, #16]
+	mrc p15, 0, r2, c5, c0, 0
+	str r2, [r0, #20]
+	mrc p15, 0, r2, c6, c0, 0
+	str r2, [r0, #24]
+	mrc p15, 0, r2, c0, c0, 5
+	str r2, [r0, #28]
+	ldr r0, =psci_ns_stage_phys_value
+	ldr r0, [r0]
+	str r1, [r0]
+	dsb sy
+	isb
+.endm
 
 .section .monitor_vectors, "ax", %progbits
 	.align 5
 .globl psci_monitor_vector_table
 psci_monitor_vector_table:
-psci_monitor_reset:
-	b .
-psci_monitor_undef:
-	b .
-psci_smc_vector:
+	b psci_monitor_reset_handler
+	b psci_monitor_undef_handler
 	b psci_smc_entry
-psci_monitor_prefetch:
+	b psci_monitor_prefetch_handler
+	b psci_monitor_data_handler
+	b psci_monitor_unused_handler
+	b psci_monitor_irq_handler
+	b psci_monitor_fiq_handler
+
+psci_monitor_reset_handler:
+	psci_monitor_log PSCI_MON_REASON_RESET
 	b .
-psci_monitor_data:
+
+psci_monitor_undef_handler:
+	psci_monitor_log PSCI_MON_REASON_UNDEF
 	b .
-psci_monitor_unused:
+
+psci_monitor_prefetch_handler:
+	psci_monitor_log PSCI_MON_REASON_PREFETCH
 	b .
-psci_monitor_irq:
+
+psci_monitor_data_handler:
+	psci_monitor_log PSCI_MON_REASON_DATA
 	b .
-psci_monitor_fiq:
+
+psci_monitor_unused_handler:
+	b .
+
+psci_monitor_irq_handler:
+	psci_monitor_log PSCI_MON_REASON_IRQ
+	b .
+
+psci_monitor_fiq_handler:
+	psci_monitor_log PSCI_MON_REASON_FIQ
 	b .
 
 .section .rodata
@@ -142,7 +200,6 @@ copy_vectors_done:
 	mcr p15, 0, r0, c12, c0, 0
 	dsb sy
 	isb
-
 	/*
 		* disable interrupts (FIQ and IRQ), also set the cpu to SVC32 mode,
 		* except if in HYP mode already
@@ -193,12 +250,9 @@ init_banked_stacks:
 	cps   #0x1b
 	mov   sp, r0
 	sub   r0, r0, #FIQ_STACK_SZ
-	cps   #0x11
-	mov   sp, r0
 	cps   #0x13
 	bx    lr
 
-.align 5
 vector_template_start:
 	b reset
 	ldr pc, vector_slot_undefined
@@ -242,8 +296,14 @@ arm32_invalidate_icache_btb:
 	.align 5
 	.globl __vector_table
 __vector_table:
-	.space vector_template_end - vector_template_start
+	.space 32		@ mirror the 8-entry vector template above
 __vector_table_end:
+
+	.align 5
+	.globl psci_monitor_diag
+psci_monitor_diag:
+	.space 0x30		@ reason, spsr, lr, fsr/far snapshots
+psci_monitor_diag_end:
 
 .section .text
 
@@ -377,6 +437,13 @@ arm32_enter_nonsecure:
 	.align 2
 	.arm
 arm32_enter_nonsecure_arm:
+	ldr r8, =psci_cpu_tramp_trace
+	mov r4, #0x30
+	str r4, [r8, #8]
+	ldr r6, =psci_ns_stage_phys_value
+	ldr r6, [r6]
+	mov r7, #0x30
+	str r7, [r6]
 	mov r12, r0			@ preserve entry address
 	mov r0, r1			@ arg0
 	mov r1, r2			@ arg1
@@ -384,18 +451,53 @@ arm32_enter_nonsecure_arm:
 	cpsid aif
 	dsb sy
 	isb
+	mov r7, #0x33
+	str r7, [r8, #8]
 	mrc p15, 0, r3, c1, c1, 0
 	bic r3, r3, #0x4a
 	orr r3, r3, #(0x31)
 	orr r3, r3, #(1 << 8) @ HCE enable
 	mcr p15, 0, r3, c1, c1, 0
+	mov r7, #0x34
+	str r7, [r8, #8]
+	@
+	@ Reset CNTVOFF when virtualization and the generic timer are present
+	@ so the first non-secure instruction does not take a synchronous abort.
+	.ifne MACH_T113S3_HAS_VIRTUAL_COUNTER
+	mrc p15, 0, r9, c0, c1, 1
+	mov r10, r9, lsr #12
+	and r10, r10, #0xf
+	beq 1f
+	mov r10, r9, lsr #16
+	and r10, r10, #0xf
+	beq 1f
+	mov r9, #0
+	mov r10, #0
+	mcrr p15, 4, r9, r10, c14
+1:
+	.endif
 	isb
+	mov r7, #0x35
+	str r7, [r8, #8]
 	@ copy secure SVC stack to non-secure SVC stack
 	mov r5, sp
 	mcr p15, 0, r5, c13, c0, 2
+	mov r7, #0x36
+	str r7, [r8, #8]
 	mov r4, r12
 	mov lr, r12
 	mov r3, #0
 	mov r5, #(ARMV7_SVC_MODE | ARMV7_IRQ_MASK | ARMV7_FIQ_MASK)
+	tst r4, #1
+	orrne r5, r5, #(1 << 5)
+	orrne lr, lr, #1
+	mov r7, #0x37
+	str r7, [r8, #8]
+	mov r7, #0x31
+	str r7, [r6]
 	msr spsr_cxsf, r5
+	mov r7, #0x38
+	str r7, [r8, #8]
+	mov r7, #0x32
+	str r7, [r6]
 	movs pc, lr

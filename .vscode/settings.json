@@ -13,6 +13,7 @@
     "cortex-debug.variableUseNaturalFormat": true,
     "files.associations": {
       "condition_variable": "c",
-      "cstdint": "c"
+      "cstdint": "c",
+      "board.h": "c"
     },
 }

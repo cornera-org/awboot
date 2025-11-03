@@ -86,6 +86,22 @@ void arm32_invalidate_icache_btb(void);
 void arm32_enter_nonsecure(void (*entry)(int, int, unsigned int),
                            unsigned int arg0, unsigned int arg1, unsigned int arg2);
 
+static inline void arm32_enable_smp(void)
+{
+	uint32_t value;
+	__asm__ __volatile__("mrc p15, 0, %0, c1, c0, 1" : "=r"(value));
+	value |= (1u << 6);
+	__asm__ __volatile__("mcr p15, 0, %0, c1, c0, 1" :: "r"(value) : "memory");
+	__asm__ __volatile__("isb" ::: "memory");
+}
+
+static inline uint32_t arm32_cpsr_read(void)
+{
+	uint32_t value;
+	__asm__ __volatile__("mrs %0, cpsr" : "=r"(value));
+	return value;
+}
+
 #ifdef __cplusplus
 }
 #endif

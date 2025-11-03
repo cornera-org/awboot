@@ -154,6 +154,7 @@ int main(void)
 	info("DRAM init done: %" PRIu32 " MiB\r\n", memory_size >> 20);
 
 	sunxi_security_setup();
+	arm32_enable_smp();
 	sunxi_gic_set_nonsecure();
 
 	void (*kernel_entry)(int zero, int arch, unsigned int params);

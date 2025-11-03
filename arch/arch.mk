@@ -7,6 +7,7 @@ CFLAGS += -DCOUNTER_FREQUENCY=24000000
 
 ASRCS	+=  $(SOC)/start.S
 ASRCS	+=  $(SOC)/memcpy.S
+ASRCS	+=  $(SOC)/psci_tramp.S
 
 ifneq ($(wildcard $(SOC)/dram_sun20i_d1.c),)
 SRCS	+=  $(SOC)/dram_sun20i_d1.c

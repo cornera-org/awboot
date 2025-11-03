@@ -826,7 +826,7 @@ static unsigned int mctl_channel_init(unsigned int ch_index, dram_para_t *para)
 					(para->dram_para2 & (1 << 12)) ? 0x03000001 : 0x01000007);
 
 	if (readl((SUNXI_R_CPUCFG_BASE + SUNXI_R_CPUCFG_SUP_STAN_FLAG)) & (1 << 16)) {
-		clrbits_le32((R_PRCM_BASE + VDD_SYS_PWROFF_GATING_REG), 0x2);
+		clrbits_le32((SUNXI_R_PRCM_BASE + VDD_SYS_PWROFF_GATING_REG), 0x2);
 		udelay(10);
 	}
 
@@ -876,7 +876,7 @@ static unsigned int mctl_channel_init(unsigned int ch_index, dram_para_t *para)
 		while ((readl((MCTL_PHY_BASE + MCTL_PHY_STATR)) & 0x7) != 0x3) {
 		}
 
-		clrbits_le32((R_PRCM_BASE + VDD_SYS_PWROFF_GATING_REG), 0x1);
+		clrbits_le32((SUNXI_R_PRCM_BASE + VDD_SYS_PWROFF_GATING_REG), 0x1);
 		udelay(10);
 
 		clrbits_le32((MCTL_PHY_BASE + MCTL_PHY_PWRCTL), 0x1);
@@ -1315,7 +1315,7 @@ int init_DRAM(int type, dram_para_t *para)
 		udelay(10);
 	} else {
 		clrbits_le32((SYS_CONTROL_REG_BASE + ZQ_CAL_CTRL_REG), 0x3);
-		writel(para->dram_tpr13 & (1 << 16), (R_PRCM_BASE + ANALOG_PWROFF_GATING_REG));
+		writel(para->dram_tpr13 & (1 << 16), (SUNXI_R_PRCM_BASE + ANALOG_PWROFF_GATING_REG));
 		udelay(10);
 		clrsetbits_le32((SYS_CONTROL_REG_BASE + ZQ_CAL_CTRL_REG), 0x108, (1 << 1));
 		udelay(10);
