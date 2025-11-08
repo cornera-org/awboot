@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <inttypes.h>
 #include "common.h"
 #include <stddef.h>
 #include <string.h>
@@ -8,6 +9,9 @@
 #include "sunxi_wdg.h"
 #include "board.h"
 #include "sunxi_cpucfg.h"
+#if PSCI_CPU_SELFTEST
+#include "psci_selftest.h"
+#endif
 
 #define SUNXI_CPUCFG_RST_CTRL_REG(cluster)     (SUNXI_CPUCFG_BASE + 0x0000u + (cluster) * 4u)
 #define SUNXI_CPUCFG_CLS_CTRL_REG0(cluster)    (SUNXI_CPUCFG_BASE + 0x0010u + (cluster) * 0x10u)
@@ -30,20 +34,9 @@
 #define SUNXI_CPU_STATUS_WFI_BIT(core)         BIT(16u + (core))
 
 #define PSCI_CPU1_PROBE_MAGIC                  0x43505531u
-#define PSCI_CPU_SELFTEST                      1
 #define SUNXI_R_CPUCFG_CLK_REG                (SUNXI_R_PRCM_BASE + 0x022cu)
 #define SUNXI_R_CPUCFG_CLK_GATE               BIT(0)
 #define SUNXI_R_CPUCFG_CLK_RST                BIT(16)
-
-/* Secondary CPU entry trampoline written into SRAM B */
-#define SUNXI_SRAM_B_BASE        0x00030000u
-/* Keep the trampoline out of the SPL text/stack region (0x30000-0x37900). */
-#define SUNXI_SRAM_B_TRAMPOLINE  (SUNXI_SRAM_B_BASE + 0x00007c00u)
-#define SUNXI_SRAM_B_TRAMPOLINE_NS (SUNXI_SRAM_B_TRAMPOLINE + PSCI_TRAMP_NS_OFFSET)
-
-#define PSCI_NS_SHMEM_BASE        (SDRAM_TOP - 0x00001000u)
-
-#define TRAMP_NS_OPCODE(idx)    (*(volatile uint32_t *)(SUNXI_SRAM_B_TRAMPOLINE_NS + (idx) * sizeof(uint32_t)))
 
 #define PSCI_VERSION_1_0		 0x00010000u
 
@@ -59,15 +52,40 @@
 #define PSCI_AFFINITY_ON_PENDING	 2
 
 #define PSCI_CPU_COUNT			 2u
-#define PSCI_SELFTEST_CONTEXT_SEC          0xffffffffu
 #define PSCI_SELFTEST_CONTEXT_NS           0xfffffffeu
 #define PSCI_TRAMP_NS_OFFSET               0x40u
 #define PSCI_NS_DIAG_PHYS                 (PSCI_NS_SHMEM_BASE + 0x00u)
 #define PSCI_NS_STAGE_PHYS                (PSCI_NS_SHMEM_BASE + 0x10u)
-#define PSCI_NS_SRAM_TEST_PHYS            (PSCI_NS_SHMEM_BASE + 0x20u)
+#define PSCI_NS_TEST_PHYS                 (PSCI_NS_SHMEM_BASE + 0x20u)
 #define PSCI_NS_TRACE_PHYS                (PSCI_NS_SHMEM_BASE + 0x30u)
+#define PSCI_NS_ENTRY_TARGET_PHYS         (PSCI_NS_SHMEM_BASE + 0x40u)
 #define PSCI_NS_STUB_PHYS                 (PSCI_NS_SHMEM_BASE + 0x100u)
+#define PSCI_NS_LINUX_SECONDARY_PHYS      (PSCI_NS_STUB_PHYS + 0x200u)
+#define PSCI_NS_LINUX_STACK_PHYS          (PSCI_NS_LINUX_SECONDARY_PHYS + 0x200u)
+#define PSCI_NS_LINUX_STACK_SIZE          0x4000u
+#define PSCI_NS_LINUX_TASK_PHYS           (PSCI_NS_LINUX_STACK_PHYS + PSCI_NS_LINUX_STACK_SIZE)
+#define PSCI_NS_LINUX_TASK_SIZE           0x1000u
+#define PSCI_NS_LINUX_ENTRY_PHYS          (PSCI_NS_LINUX_TASK_PHYS + PSCI_NS_LINUX_TASK_SIZE + 0x1000u)
+#define PSCI_NS_LINUX_ENTRY_MAX_SIZE      0x200u
+#define PSCI_NS_LINUX_PGDIR_PHYS          0x00400000ull
+#define PSCI_NS_LINUX_SWAPPER_PHYS        0x00800000u
+#define PSCI_NS_STAGE_SELFTEST_FINAL      0x53u
+#define PSCI_DCACHE_LINE_SIZE             32u
+#ifndef PSCI_TRACE_ENABLE
+#define PSCI_TRACE_ENABLE 0
+#endif
 #define PSCI_SELFTEST_NS_FID               0x82000100u
+#ifndef PSCI_LINUX_SECONDARY_DATA_OFFSET
+#define PSCI_LINUX_SECONDARY_DATA_OFFSET  0u
+#endif
+
+#if PSCI_TRACE_ENABLE
+#define PSCI_TRACE_DEBUG(...) debug(__VA_ARGS__)
+#else
+#define PSCI_TRACE_DEBUG(...) \
+	do {                       \
+	} while (0)
+#endif
 
 #define PSCI_0_2_FN_PSCI_VERSION	0x84000000u
 #define PSCI_0_2_FN_CPU_SUSPEND		0x84000001u
@@ -89,7 +107,9 @@
 
 extern uint32_t psci_monitor_vector_table;
 
+#if PSCI_TRACE_ENABLE
 static volatile uint32_t psci_smc_count;
+#endif
 
 #define PSCI_MONITOR_DIAG_WORDS 8u
 
@@ -99,18 +119,38 @@ static volatile uint32_t psci_cpu_states[PSCI_CPU_COUNT] = {
 };
 volatile uint32_t psci_cpu_last_context[PSCI_CPU_COUNT];
 volatile uint32_t psci_cpu_entry_phys[PSCI_CPU_COUNT];
-volatile uint32_t psci_cpu_tramp_trace[3];
 extern volatile uint32_t psci_monitor_diag[];
-
 const uint32_t psci_ns_stage_phys_value __attribute__((used)) = PSCI_NS_STAGE_PHYS;
-const uint32_t psci_selftest_context_sec_value __attribute__((used)) = PSCI_SELFTEST_CONTEXT_SEC;
+const uint32_t psci_ns_diag_phys_value __attribute__((used)) = PSCI_NS_DIAG_PHYS;
+const uint32_t psci_ns_linux_secondary_phys_value __attribute__((used)) = PSCI_NS_LINUX_SECONDARY_PHYS;
+const uint32_t psci_ns_entry_target_phys_value __attribute__((used)) = PSCI_NS_ENTRY_TARGET_PHYS;
+const uint32_t psci_ns_trace_phys_value __attribute__((used)) = PSCI_NS_TRACE_PHYS;
+const uint32_t psci_ns_stack_phys_value __attribute__((used)) = PSCI_NS_LINUX_STACK_PHYS;
+const uint32_t psci_ns_stack_size_value __attribute__((used)) = PSCI_NS_LINUX_STACK_SIZE;
+const uint32_t psci_ns_task_phys_value __attribute__((used)) = PSCI_NS_LINUX_TASK_PHYS;
+const uint32_t psci_ns_task_size_value __attribute__((used)) = PSCI_NS_LINUX_TASK_SIZE;
+const uint64_t psci_ns_pgdir_phys_value __attribute__((used)) = PSCI_NS_LINUX_PGDIR_PHYS;
+const uint32_t psci_ns_swapper_phys_value __attribute__((used)) = PSCI_NS_LINUX_SWAPPER_PHYS;
 extern uint8_t psci_ns_stub_start[];
 extern uint8_t psci_ns_stub_end[];
 extern uint32_t psci_ns_stub_diag_lit[];
 extern uint32_t psci_ns_stub_stage_lit[];
 extern uint32_t psci_ns_stub_sram_lit[];
 extern uint32_t psci_ns_stub_trace_lit[];
+extern uint32_t psci_ns_stub_secdata_lit[];
+extern uint32_t psci_ns_stub_context_lit[];
+extern uint32_t psci_ns_stub_entry_lit[];
+extern uint8_t psci_ns_linux_entry_start[];
+extern uint8_t psci_ns_linux_entry_end[];
+extern uint32_t psci_ns_linux_entry_target_lit[];
+extern uint32_t psci_ns_linux_entry_trace_lit[];
 extern void psci_cpu_secure_entry(void);
+
+void psci_clean_dcache_range(uintptr_t addr, size_t size);
+void psci_invalidate_icache_range(uintptr_t addr, size_t size);
+static inline void writel(uint32_t val, uint32_t addr);
+static inline void setbits(uint32_t addr, uint32_t mask);
+static inline void clrbits(uint32_t addr, uint32_t mask);
 
 #if PSCI_CPU_SELFTEST
 volatile uint32_t psci_cpu1_probe_magic;
@@ -118,10 +158,64 @@ volatile uint32_t psci_cpu1_probe_counter;
 volatile uint32_t psci_cpu1_probe_mpidr;
 volatile uint32_t psci_cpu1_probe_cpsr;
 
-static void __attribute__((noreturn)) psci_cpu1_dummy_entry(void);
+static int32_t psci_smc_call(uint32_t fid, uint32_t arg0, uint32_t arg1, uint32_t arg2)
+{
+	register uint32_t r0 __asm__("r0") = fid;
+	register uint32_t r1 __asm__("r1") = arg0;
+	register uint32_t r2 __asm__("r2") = arg1;
+	register uint32_t r3 __asm__("r3") = arg2;
+
+	__asm__ __volatile__("smc #0"
+			 : "+r"(r0), "+r"(r1), "+r"(r2), "+r"(r3)
+			 :
+			 : "r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11", "lr", "cc", "memory");
+
+	return (int32_t)r0;
+}
+
 static void psci_cpu1_manual_bringup(void);
 #endif
 
+static void psci_ns_entry_prepare(uint32_t entry_target)
+{
+#if LOG_LEVEL >= LOG_DEBUG
+	const size_t entry_size =
+		(size_t)(psci_ns_linux_entry_end - psci_ns_linux_entry_start);
+
+	if (entry_size > PSCI_NS_LINUX_ENTRY_MAX_SIZE) {
+		fatal("PSCI: linux self-test entry too large (%zu bytes)\r\n", entry_size);
+	}
+
+	uint8_t *entry_dest = (uint8_t *)(uintptr_t)PSCI_NS_LINUX_ENTRY_PHYS;
+	memcpy(entry_dest, psci_ns_linux_entry_start, entry_size);
+
+	const uintptr_t entry_src = (uintptr_t)psci_ns_linux_entry_start;
+	const uintptr_t target_off =
+		(uintptr_t)psci_ns_linux_entry_target_lit - entry_src;
+
+	uint32_t *target_ptr = (uint32_t *)(entry_dest + target_off);
+	target_ptr[0] = PSCI_NS_ENTRY_TARGET_PHYS;
+
+	const uintptr_t trace_src = (uintptr_t)psci_ns_linux_entry_trace_lit;
+	const uintptr_t trace_off = trace_src - entry_src;
+	uint32_t *trace_ptr = (uint32_t *)(entry_dest + trace_off);
+	trace_ptr[0] = PSCI_NS_TRACE_PHYS;
+
+	uint32_t entry_thumb = entry_target | 0x1u;
+	if (entry_thumb != entry_target) {
+		PSCI_TRACE_DEBUG("PSCI: forcing Thumb entry bit (target=0x%08" PRIx32
+				 " -> 0x%08" PRIx32 ")\r\n",
+				 entry_target, entry_thumb);
+	}
+	writel(entry_thumb, PSCI_NS_ENTRY_TARGET_PHYS);
+
+	psci_clean_dcache_range(PSCI_NS_ENTRY_TARGET_PHYS, sizeof(entry_thumb));
+	psci_clean_dcache_range(PSCI_NS_LINUX_ENTRY_PHYS, entry_size);
+	psci_invalidate_icache_range(PSCI_NS_LINUX_ENTRY_PHYS, entry_size);
+#else
+	(void)entry_target;
+#endif
+}
 enum psci_monitor_reason {
 	PSCI_MONITOR_REASON_NONE = 0u,
 	PSCI_MONITOR_REASON_UNDEF = 0xe0u,
@@ -132,6 +226,7 @@ enum psci_monitor_reason {
 	PSCI_MONITOR_REASON_RESET = 0xe5u,
 };
 
+#if PSCI_TRACE_ENABLE
 static const char *psci_monitor_reason_name(uint32_t reason)
 {
 	switch (reason) {
@@ -152,17 +247,60 @@ static const char *psci_monitor_reason_name(uint32_t reason)
 	}
 }
 
-static inline uint32_t mpidr_read(void)
+static void psci_log_monitor_diag(void)
 {
-	uint32_t mpidr;
-	__asm__ __volatile__("mrc p15, 0, %0, c0, c0, 5" : "=r"(mpidr));
-	return mpidr;
-}
+	uint32_t reason_raw = psci_monitor_diag[0];
+	if (reason_raw == PSCI_MONITOR_REASON_NONE)
+		return;
 
-static inline uint32_t readl(uint32_t addr)
-{
-	return read32(addr);
+	uint32_t reason = reason_raw & 0xffu;
+	const char *reason_name = psci_monitor_reason_name(reason);
+	uint32_t spsr = psci_monitor_diag[1];
+	uint32_t lr = psci_monitor_diag[2];
+	uint32_t ifsr = psci_monitor_diag[3];
+	uint32_t ifar = psci_monitor_diag[4];
+	uint32_t dfsr = psci_monitor_diag[5];
+	uint32_t dfar = psci_monitor_diag[6];
+	uint32_t mpidr = psci_monitor_diag[7];
+	uint32_t elr_hyp = psci_monitor_diag[8];
+	uint32_t spsr_hyp = psci_monitor_diag[9];
+	uint32_t spsr_target = psci_monitor_diag[10];
+	uint32_t virt_field = psci_monitor_diag[11];
+	uint32_t inst = 0u;
+	if ((reason == PSCI_MONITOR_REASON_PREFETCH) ||
+	    (reason == PSCI_MONITOR_REASON_UNDEF)) {
+		inst = read32(ifar);
+	}
+
+	PSCI_TRACE_DEBUG("PSCI: monitor trap %s (raw=0x%08" PRIx32 ") "
+			 "spsr=0x%08" PRIx32 " lr=0x%08" PRIx32
+			 " ifsr=0x%08" PRIx32 " ifar=0x%08" PRIx32
+			 " dfsr=0x%08" PRIx32 " dfar=0x%08" PRIx32
+			 " mpidr=0x%08" PRIx32
+			 " elr_hyp=0x%08" PRIx32 " spsr_hyp=0x%08" PRIx32
+			 " spsr_target=0x%08" PRIx32 " virt_field=0x%08" PRIx32 "\r\n",
+			 reason_name,
+			 reason_raw,
+			 spsr,
+			 lr,
+			 ifsr,
+			 ifar,
+			 dfsr,
+			 dfar,
+			 mpidr,
+			 elr_hyp,
+			 spsr_hyp,
+			 spsr_target,
+			 virt_field);
+	PSCI_TRACE_DEBUG("PSCI: monitor trap inst=0x%08" PRIx32 "\r\n", inst);
+
+	psci_monitor_diag[0] = PSCI_MONITOR_REASON_NONE;
 }
+#else
+static inline void psci_log_monitor_diag(void)
+{
+}
+#endif
 
 static inline void writel(uint32_t val, uint32_t addr)
 {
@@ -171,24 +309,260 @@ static inline void writel(uint32_t val, uint32_t addr)
 
 static inline void setbits(uint32_t addr, uint32_t mask)
 {
-	writel(readl(addr) | mask, addr);
+	writel(read32(addr) | mask, addr);
 }
 
 static inline void clrbits(uint32_t addr, uint32_t mask)
 {
-	writel(readl(addr) & ~mask, addr);
+	writel(read32(addr) & ~mask, addr);
 }
 
-static inline void psci_stage_mark(uint32_t stage)
+void psci_clean_dcache_range(uintptr_t addr, size_t size)
 {
-	writel(stage, PSCI_NS_STAGE_PHYS);
-	dmb();
-	isb();
+	const uintptr_t line_mask = (uintptr_t)(PSCI_DCACHE_LINE_SIZE - 1u);
+	uintptr_t start = addr & ~line_mask;
+	uintptr_t end = (addr + size + line_mask) & ~line_mask;
+
+	for (uintptr_t cur = start; cur < end; cur += PSCI_DCACHE_LINE_SIZE)
+		arm32_dcache_clean_line_by_mva(cur);
+
+	__asm__ __volatile__("dsb sy" ::: "memory");
+}
+
+void psci_invalidate_icache_range(uintptr_t addr, size_t size)
+{
+	const uintptr_t line_mask = (uintptr_t)(PSCI_DCACHE_LINE_SIZE - 1u);
+	uintptr_t start = addr & ~line_mask;
+	uintptr_t end = (addr + size + line_mask) & ~line_mask;
+
+	for (uintptr_t cur = start; cur < end; cur += PSCI_DCACHE_LINE_SIZE)
+		arm32_icache_invalidate_line_by_mva(cur);
+
+	__asm__ __volatile__("dsb sy" ::: "memory");
+	__asm__ __volatile__("isb" ::: "memory");
+}
+
+static inline bool psci_addr_in_sdram(uintptr_t addr, size_t size)
+{
+	const uintptr_t base = (uintptr_t)SDRAM_BASE;
+	const uintptr_t top = (uintptr_t)SDRAM_TOP;
+
+	if (addr < base)
+		return false;
+	if ((addr + size) > top)
+		return false;
+	return true;
+}
+
+#if LOG_LEVEL >= LOG_DEBUG
+struct psci_linux_secondary_data_snapshot {
+	uint32_t words[5];
+};
+
+static inline uint64_t psci_snapshot_pgdir(const struct psci_linux_secondary_data_snapshot *snap)
+{
+	return (((uint64_t)snap->words[1]) << 32) | (uint64_t)snap->words[0];
+}
+
+static inline uint32_t psci_snapshot_swapper(const struct psci_linux_secondary_data_snapshot *snap)
+{
+	return snap->words[2];
+}
+
+static inline uint32_t psci_snapshot_stack(const struct psci_linux_secondary_data_snapshot *snap)
+{
+	return snap->words[3];
+}
+
+static inline uint32_t psci_snapshot_task(const struct psci_linux_secondary_data_snapshot *snap)
+{
+	return snap->words[4];
+}
+
+static void psci_capture_secondary_data(uint32_t entry_point)
+{
+#if PSCI_LINUX_SECONDARY_DATA_OFFSET
+	const uintptr_t entry_phys =
+		((uintptr_t)entry_point) & ~(uintptr_t)0x1u; /* strip Thumb bit */
+	const uintptr_t src = entry_phys +
+		(uintptr_t)PSCI_LINUX_SECONDARY_DATA_OFFSET;
+	if (!psci_addr_in_sdram(src, sizeof(struct psci_linux_secondary_data_snapshot)))
+		return;
+
+	struct psci_linux_secondary_data_snapshot snapshot;
+	memcpy(&snapshot, (const void *)src, sizeof(snapshot));
+
+#if PSCI_TRACE_ENABLE
+	const uint32_t *raw = (const uint32_t *)src;
+	PSCI_TRACE_DEBUG("PSCI: secondary_data raw src=0x%08" PRIx32
+	                 " w0=0x%08" PRIx32 " w1=0x%08" PRIx32
+	                 " w2=0x%08" PRIx32 " w3=0x%08" PRIx32
+	                 " w4=0x%08" PRIx32 "\r\n",
+	                 (uint32_t)src,
+	                 raw[0], raw[1], raw[2], raw[3], raw[4]);
+
+	const uint32_t *snap_words = (const uint32_t *)&snapshot;
+	PSCI_TRACE_DEBUG("PSCI: secondary_data snap w0=0x%08" PRIx32
+	                 " w1=0x%08" PRIx32 " w2=0x%08" PRIx32
+	                 " w3=0x%08" PRIx32 " w4=0x%08" PRIx32 "\r\n",
+	                 snap_words[0], snap_words[1], snap_words[2],
+	                 snap_words[3], snap_words[4]);
+#endif
+	memcpy((void *)(uintptr_t)PSCI_NS_LINUX_SECONDARY_PHYS,
+	       &snapshot,
+	       sizeof(snapshot));
+	psci_clean_dcache_range(PSCI_NS_LINUX_SECONDARY_PHYS,
+				sizeof(snapshot));
+#if PSCI_TRACE_ENABLE
+	const uint64_t pgdir = psci_snapshot_pgdir(&snapshot);
+	PSCI_TRACE_DEBUG("PSCI: CPU secondary_data mem  pgdir=0x%016llx"
+	                 " swapper=0x%08" PRIx32 " stack=0x%08" PRIx32
+	                 " task=0x%08" PRIx32 "\r\n",
+	                 (unsigned long long)pgdir,
+	                 psci_snapshot_swapper(&snapshot),
+	                 psci_snapshot_stack(&snapshot),
+	                 psci_snapshot_task(&snapshot));
+#else
+	(void)snapshot;
+#endif
+#else
+	(void)entry_point;
+#endif
+}
+#else
+static inline void psci_capture_secondary_data(uint32_t entry_point)
+{
+	(void)entry_point;
+}
+#endif
+
+static uint32_t psci_wait_for_stage_nonzero(uint32_t timeout_us)
+{
+	uint32_t stage = 0u;
+
+	while (timeout_us-- > 0u) {
+		stage = read32(PSCI_NS_STAGE_PHYS);
+		if (stage != 0u)
+			break;
+		udelay(1);
+	}
+
+	return stage;
+}
+
+static uint32_t psci_wait_for_stage_at_least(uint32_t min_stage, uint32_t timeout_us)
+{
+	uint32_t stage = 0u;
+
+	while (timeout_us-- > 0u) {
+		stage = read32(PSCI_NS_STAGE_PHYS);
+		if (stage >= min_stage)
+			break;
+		udelay(1);
+	}
+
+	return stage;
+}
+
+#if PSCI_TRACE_ENABLE
+static void psci_log_stage_snapshot(const char *reason, uint32_t core, uint32_t stage)
+{
+	const uint32_t diag_base = PSCI_NS_DIAG_PHYS;
+	const uint32_t diag_stage UNUSED_DEBUG = read32(diag_base + 0u);
+	const uint32_t diag_mpidr UNUSED_DEBUG = read32(diag_base + 4u);
+	const uint32_t diag_cpsr UNUSED_DEBUG = read32(diag_base + 8u);
+	const uint32_t diag_stack UNUSED_DEBUG = read32(diag_base + 24u);
+	const uint32_t diag_task UNUSED_DEBUG = read32(diag_base + 28u);
+	const uint32_t diag_stub_entry = read32(diag_base + 32u);
+	const uint32_t diag_stub_w0 = read32(diag_base + 36u);
+	const uint32_t diag_stub_w1 = read32(diag_base + 40u);
+	const uint32_t diag_shim_entry = read32(diag_base + 60u);
+	const uint32_t diag_shim_w0 = read32(diag_base + 64u);
+	const uint32_t diag_shim_w1 = read32(diag_base + 68u);
+	const uint32_t trace_base = PSCI_NS_TRACE_PHYS;
+	const uint32_t trace_tag = read32(trace_base + 0u);
+	const uint32_t trace_cpsr_before = read32(trace_base + 4u);
+	const uint32_t trace_cpsr_after = read32(trace_base + 8u);
+
+	debug("PSCI: CPU%u %s stage=0x%08" PRIx32 " diag_stage=0x%08" PRIx32
+	      " mpidr=0x%08" PRIx32 " cpsr=0x%08" PRIx32
+	      " stack=0x%08" PRIx32 " task=0x%08" PRIx32
+	      " stub_entry=0x%08" PRIx32 " stub_w0=0x%08" PRIx32
+	      " stub_w1=0x%08" PRIx32
+	      " shim_entry=0x%08" PRIx32 " shim_w0=0x%08" PRIx32
+	      " shim_w1=0x%08" PRIx32
+	      " trace_tag=0x%08" PRIx32 " trace_cpsr_pre=0x%08" PRIx32
+	      " trace_cpsr_post=0x%08" PRIx32 "\r\n",
+	      (unsigned int)core,
+	      reason,
+	      stage,
+	      diag_stage,
+	      diag_mpidr,
+	      diag_cpsr,
+	      diag_stack,
+	      diag_task,
+	      diag_stub_entry,
+	      diag_stub_w0,
+	      diag_stub_w1,
+	      diag_shim_entry,
+	      diag_shim_w0,
+	      diag_shim_w1,
+	      trace_tag,
+	      trace_cpsr_before,
+	      trace_cpsr_after);
+}
+#else
+static inline void psci_log_stage_snapshot(const char *reason, uint32_t core, uint32_t stage)
+{
+	(void)reason;
+	(void)core;
+	(void)stage;
+}
+#endif
+
+#if PSCI_TRACE_ENABLE
+static void psci_log_secure_context(uint32_t core)
+{
+	const uint32_t scr = arm32_read_scr();
+	const uint32_t sctlr = arm32_read_p15_c1();
+	const uint32_t cpsr = arm32_cpsr_read();
+	const uint32_t id_pfr1 = arm32_read_id_pfr1();
+	const uint32_t virt_field = (id_pfr1 >> 4) & 0xfu;
+	uint32_t hvbar = 0u;
+	uint32_t hcr = 0u;
+	uint32_t hcptr = 0u;
+	uint32_t hdcr = 0u;
+
+	if (virt_field != 0u) {
+		hvbar = arm32_read_hvbar();
+		hcr = arm32_read_hcr();
+		hcptr = arm32_read_hcptr();
+		hdcr = arm32_read_hdcr();
+	}
+
+	PSCI_TRACE_DEBUG("PSCI: CPU%u secure ctx scr=0x%08" PRIx32
+			 " sctlr=0x%08" PRIx32 " cpsr=0x%08" PRIx32
+			 " id_pfr1=0x%08" PRIx32
+			 " hvbar=0x%08" PRIx32 " hcr=0x%08" PRIx32
+			 " hcptr=0x%08" PRIx32 " hdcr=0x%08" PRIx32 "\r\n",
+			 (unsigned int)core, scr, sctlr, cpsr, id_pfr1,
+			 hvbar, hcr, hcptr, hdcr);
+}
+#else
+static inline void psci_log_secure_context(uint32_t core)
+{
+	(void)core;
+}
+#endif
+
+static void psci_configure_hyp_environment(uint32_t entry_target)
+{
+	(void)entry_target;
 }
 
 static void sunxi_r_cpucfg_enable(void)
 {
-	uint32_t val = readl(SUNXI_R_CPUCFG_CLK_REG);
+	uint32_t val = read32(SUNXI_R_CPUCFG_CLK_REG);
 
 	if ((val & SUNXI_R_CPUCFG_CLK_GATE) && (val & SUNXI_R_CPUCFG_CLK_RST))
 		return;
@@ -200,14 +574,14 @@ static void sunxi_r_cpucfg_enable(void)
 
 static void sunxi_cpu_disable_power(unsigned int cluster, unsigned int core)
 {
-	if (readl(SUNXI_CPU_POWER_CLAMP_REG(cluster, core)) == 0xffu)
+	if (read32(SUNXI_CPU_POWER_CLAMP_REG(cluster, core)) == 0xffu)
 		return;
 	writel(0xffu, SUNXI_CPU_POWER_CLAMP_REG(cluster, core));
 }
 
 static void sunxi_cpu_enable_power(unsigned int cluster, unsigned int core)
 {
-	if (readl(SUNXI_CPU_POWER_CLAMP_REG(cluster, core)) == 0u)
+	if (read32(SUNXI_CPU_POWER_CLAMP_REG(cluster, core)) == 0u)
 		return;
 	writel(0xfeu, SUNXI_CPU_POWER_CLAMP_REG(cluster, core));
 	writel(0xf8u, SUNXI_CPU_POWER_CLAMP_REG(cluster, core));
@@ -220,140 +594,77 @@ static void sunxi_cpu_enable_power(unsigned int cluster, unsigned int core)
 
 static void psci_trampoline_write(uint32_t entry_point, uint32_t context_id)
 {
-	uint32_t entry_phys = entry_point;
+	const uint32_t entry_target = entry_point;
 
-	psci_cpu_tramp_trace[0] = 0xffffffffu;
-	psci_cpu_tramp_trace[1] = 0xffffffffu;
-	psci_cpu_tramp_trace[2] = 0xffffffffu;
+	const size_t stub_size = (size_t)(psci_ns_stub_end - psci_ns_stub_start);
+	const size_t shmem_header_size =
+		(size_t)(PSCI_NS_STUB_PHYS - PSCI_NS_SHMEM_BASE);
+	const size_t shmem_header_clear_size = shmem_header_size;
+
 	dmb();
-	psci_cpu_tramp_trace[2] = 1u;
-	psci_cpu_tramp_trace[0] = entry_phys;
-	psci_cpu_tramp_trace[1] = context_id;
-	dmb();
-	size_t ns_trampoline_size = 128u;
-	uintptr_t ns_trampoline_phys = (uintptr_t)SUNXI_SRAM_B_TRAMPOLINE_NS;
-	if (context_id == PSCI_SELFTEST_CONTEXT_NS) {
-		psci_stage_mark(0x10u);
-		psci_cpu_tramp_trace[2] = 0x10u;
+	memset((void *)PSCI_NS_SHMEM_BASE, 0, shmem_header_clear_size);
+	memset((void *)PSCI_NS_STUB_PHYS, 0, stub_size);
+	uint8_t *stub_dest = (uint8_t *)(uintptr_t)PSCI_NS_STUB_PHYS;
+	memcpy(stub_dest, psci_ns_stub_start, stub_size);
+
+	const uintptr_t stub_src_base = (uintptr_t)psci_ns_stub_start;
+	const uintptr_t diag_off = (uintptr_t)psci_ns_stub_diag_lit - stub_src_base;
+	const uintptr_t stage_off = (uintptr_t)psci_ns_stub_stage_lit - stub_src_base;
+	const uintptr_t sram_off = (uintptr_t)psci_ns_stub_sram_lit - stub_src_base;
+	const uintptr_t trace_off = (uintptr_t)psci_ns_stub_trace_lit - stub_src_base;
+	const uintptr_t secdata_off = (uintptr_t)psci_ns_stub_secdata_lit - stub_src_base;
+	const uintptr_t context_off = (uintptr_t)psci_ns_stub_context_lit - stub_src_base;
+	const uintptr_t entry_off = (uintptr_t)psci_ns_stub_entry_lit - stub_src_base;
+	uint32_t *diag_ptr = (uint32_t *)(stub_dest + diag_off);
+	uint32_t *stage_ptr = (uint32_t *)(stub_dest + stage_off);
+	uint32_t *sram_ptr = (uint32_t *)(stub_dest + sram_off);
+	uint32_t *trace_ptr = (uint32_t *)(stub_dest + trace_off);
+	uint32_t *secdata_ptr = (uint32_t *)(stub_dest + secdata_off);
+	uint32_t *context_ptr = (uint32_t *)(stub_dest + context_off);
+	uint32_t *entry_ptr = (uint32_t *)(stub_dest + entry_off);
+	diag_ptr[0] = PSCI_NS_DIAG_PHYS;
+	stage_ptr[0] = PSCI_NS_STAGE_PHYS;
+	sram_ptr[0] = PSCI_NS_TEST_PHYS;
+	trace_ptr[0] = PSCI_NS_TRACE_PHYS;
+	secdata_ptr[0] = PSCI_NS_LINUX_SECONDARY_PHYS;
+	context_ptr[0] = context_id;
+	psci_ns_entry_prepare(entry_target);
+	entry_ptr[0] = entry_target | 0x1u;
+	psci_capture_secondary_data(entry_point);
+	psci_configure_hyp_environment(entry_target);
+
+#if PSCI_TRACE_ENABLE
+	const uint32_t shim_word0 = read32(PSCI_NS_LINUX_ENTRY_PHYS);
+	const uint32_t shim_word1 = read32(PSCI_NS_LINUX_ENTRY_PHYS + 4u);
+	const uint32_t target_slot = read32(PSCI_NS_ENTRY_TARGET_PHYS);
+
+	PSCI_TRACE_DEBUG("PSCI: shim copy first words w0=0x%08" PRIx32
+			 " w1=0x%08" PRIx32 "\r\n",
+			 shim_word0, shim_word1);
+	PSCI_TRACE_DEBUG("PSCI: target slot @0x%08" PRIx32 " =0x%08" PRIx32 "\r\n",
+			 (uint32_t)PSCI_NS_ENTRY_TARGET_PHYS, target_slot);
+	PSCI_TRACE_DEBUG("PSCI: shmem header dump @0x%08" PRIx32 ":", (uint32_t)PSCI_NS_SHMEM_BASE);
+	for (size_t idx = 0; idx < 128u; idx += 16u) {
+		const uint32_t w0 = read32(PSCI_NS_SHMEM_BASE + idx + 0u);
+		const uint32_t w1 = read32(PSCI_NS_SHMEM_BASE + idx + 4u);
+		const uint32_t w2 = read32(PSCI_NS_SHMEM_BASE + idx + 8u);
+		const uint32_t w3 = read32(PSCI_NS_SHMEM_BASE + idx + 12u);
+
+		PSCI_TRACE_DEBUG("  +0x%02zx: %08" PRIx32 " %08" PRIx32
+				 " %08" PRIx32 " %08" PRIx32 "\r\n",
+				 idx, w0, w1, w2, w3);
 	}
-
-	if (context_id == PSCI_SELFTEST_CONTEXT_SEC) {
-		memset((void *)SUNXI_SRAM_B_TRAMPOLINE_NS, 0, 128u);
-	} else {
-		if (context_id == PSCI_SELFTEST_CONTEXT_NS) {
-			const size_t stub_size = (size_t)(psci_ns_stub_end - psci_ns_stub_start);
-			void *stub_dest = (void *)(uintptr_t)PSCI_NS_STUB_PHYS;
-			memcpy(stub_dest, psci_ns_stub_start, stub_size);
-			ns_trampoline_size = stub_size;
-			ns_trampoline_phys = (uintptr_t)PSCI_NS_STUB_PHYS;
-			for (uint32_t i = 0u; i < PSCI_MONITOR_DIAG_WORDS; ++i) {
-				psci_monitor_diag[i] = 0u;
-			}
-			psci_stage_mark(0x11u);
-			psci_cpu_tramp_trace[2] = 0x11u;
-
-			const uintptr_t base = ns_trampoline_phys;
-			const uintptr_t template_base = (uintptr_t)psci_ns_stub_start;
-
-			const uintptr_t diag_off = (uintptr_t)psci_ns_stub_diag_lit - template_base;
-			const uintptr_t stage_off = (uintptr_t)psci_ns_stub_stage_lit - template_base;
-			const uintptr_t sram_off = (uintptr_t)psci_ns_stub_sram_lit - template_base;
-			const uintptr_t trace_off = (uintptr_t)psci_ns_stub_trace_lit - template_base;
-
-			uint32_t *diag_ptr = (uint32_t *)(base + diag_off);
-			uint32_t *stage_ptr = (uint32_t *)(base + stage_off);
-			uint32_t *scratch_ptr = (uint32_t *)(base + sram_off);
-			uint32_t *trace_ptr = (uint32_t *)(base + trace_off);
-
-			*diag_ptr = PSCI_NS_DIAG_PHYS;
-			*stage_ptr = PSCI_NS_STAGE_PHYS;
-			*scratch_ptr = PSCI_NS_SRAM_TEST_PHYS;
-			*trace_ptr = PSCI_NS_TRACE_PHYS;
-
-			writel(0u, PSCI_NS_DIAG_PHYS + 0u);
-			writel(0u, PSCI_NS_DIAG_PHYS + 4u);
-			writel(0u, PSCI_NS_DIAG_PHYS + 8u);
-			writel(0u, PSCI_NS_STAGE_PHYS);
-			writel(0u, PSCI_NS_SRAM_TEST_PHYS);
-			writel(0u, PSCI_NS_TRACE_PHYS);
-			writel(1u, PSCI_NS_STAGE_PHYS);
-			psci_stage_mark(0x12u);
-			psci_cpu_tramp_trace[2] = 0x12u;
-
-			debug("PSCI: NS stub copied (%zu bytes) dest=0x%08" PRIx32
-		      " diag=0x%08" PRIx32
-		      " stage=0x%08" PRIx32 " scratch=0x%08" PRIx32
-		      " trace=0x%08" PRIx32
-		      " offs(d,s,r,t)=(0x%zx,0x%zx,0x%zx,0x%zx)\r\n",
-		      stub_size, (uint32_t)ns_trampoline_phys,
-		      *diag_ptr, *stage_ptr, *scratch_ptr, *trace_ptr,
-		      (size_t)diag_off, (size_t)stage_off, (size_t)sram_off, (size_t)trace_off);
-			psci_stage_mark(0x13u);
-			psci_cpu_tramp_trace[2] = 0x13u;
-		} else {
-			memset((void *)SUNXI_SRAM_B_TRAMPOLINE_NS, 0, 128u);
-		}
-	}
-	memset((void *)SUNXI_SRAM_B_TRAMPOLINE_NS, 0, 128u);
-	memset((void *)SUNXI_SRAM_B_TRAMPOLINE, 0, 128u);
-	dsb();
-	isb();
-
-	/* Clean data cache lines covering the trampolines */
-	for (uint32_t off = 0u; off < 128u; off += 32u) {
-		uint32_t addr = SUNXI_SRAM_B_TRAMPOLINE + off;
-		__asm__ __volatile__("mcr p15, 0, %0, c7, c10, 1" : : "r"(addr) : "memory");
-	}
-	uintptr_t ns_clean_start = ns_trampoline_phys & ~0x1fu;
-	uintptr_t ns_clean_end = (ns_trampoline_phys + ns_trampoline_size + 31u) & ~0x1fu;
-	for (uintptr_t addr = ns_clean_start; addr < ns_clean_end; addr += 32u) {
-		__asm__ __volatile__("mcr p15, 0, %0, c7, c10, 1" : : "r"(addr) : "memory");
-	}
-	dsb();
-	isb();
-
-	/* Invalidate corresponding instruction cache lines */
-	for (uint32_t off = 0u; off < 128u; off += 32u) {
-		uint32_t addr = SUNXI_SRAM_B_TRAMPOLINE + off;
-		__asm__ __volatile__("mcr p15, 0, %0, c7, c5, 1" : : "r"(addr) : "memory");
-	}
-	for (uintptr_t addr = ns_clean_start; addr < ns_clean_end; addr += 32u) {
-		__asm__ __volatile__("mcr p15, 0, %0, c7, c5, 1" : : "r"(addr) : "memory");
-	}
-	dsb();
-	isb();
-	if (context_id == PSCI_SELFTEST_CONTEXT_NS) {
-		psci_stage_mark(0x14u);
-		psci_cpu_tramp_trace[2] = 0x14u;
-	}
-}
-#if PSCI_CPU_SELFTEST
-static void __attribute__((noreturn)) psci_cpu1_dummy_entry(void)
-{
-	uint32_t local = 0u;
-
-	arm32_enable_smp();
-	psci_cpu1_probe_cpsr = arm32_cpsr_read();
-
-	psci_cpu1_probe_magic = PSCI_CPU1_PROBE_MAGIC;
-	psci_cpu1_probe_mpidr = mpidr_read();
-	dmb();
-	dsb();
-
-	while (true) {
-		++local;
-		psci_cpu1_probe_counter = local;
-		dmb();
-		for (volatile uint32_t delay = 0u; delay < 0x10000u; ++delay) {
-			__asm__ __volatile__("nop");
-		}
-	}
-}
 #endif
 
+	psci_clean_dcache_range((uintptr_t)PSCI_NS_SHMEM_BASE, shmem_header_clear_size);
+	psci_clean_dcache_range((uintptr_t)PSCI_NS_STUB_PHYS, stub_size);
+	psci_invalidate_icache_range((uintptr_t)PSCI_NS_STUB_PHYS, stub_size);
 
+	PSCI_TRACE_DEBUG("PSCI: trampoline literal entry=0x%08" PRIx32 "\r\n",
+			 entry_ptr[0]);
+}
 static int32_t psci_do_cpu_on(uint32_t target_affinity, uint32_t entry_point,
-                              uint32_t context_id)
+															uint32_t context_id)
 {
 	const uint32_t cluster = (target_affinity >> 8) & 0xffu;
 	const uint32_t core = target_affinity & 0xffu;
@@ -371,52 +682,30 @@ static int32_t psci_do_cpu_on(uint32_t target_affinity, uint32_t entry_point,
 	if (psci_cpu_states[core] == PSCI_AFFINITY_ON)
 		return PSCI_RET_ALREADY_ON;
 
+	PSCI_TRACE_DEBUG("PSCI: CPU%lu ON requested (entry=0x%08" PRIx32 ", ctx=0x%08" PRIx32 ")\r\n",
+			 core, entry_phys, context_id);
+
 	psci_cpu_states[core] = PSCI_AFFINITY_ON_PENDING;
 	psci_cpu_last_context[core] = context_id;
 
-	uint32_t target_entry = entry_phys;
-	if (context_id == PSCI_SELFTEST_CONTEXT_NS) {
-		psci_trampoline_write(entry_phys, context_id);
-		target_entry = (PSCI_NS_STUB_PHYS | 1u);
-	} else {
-		writel(0u, PSCI_NS_STAGE_PHYS);
-	}
+	psci_trampoline_write(entry_phys, context_id);
+	psci_log_secure_context(core);
 
-	psci_cpu_entry_phys[core] = target_entry;
-	psci_cpu_tramp_trace[0] = 0u;
-	psci_cpu_tramp_trace[1] = 0u;
-	psci_cpu_tramp_trace[2] = (context_id == PSCI_SELFTEST_CONTEXT_NS) ? 0x10u : 0u;
-	if (context_id == PSCI_SELFTEST_CONTEXT_NS) {
-		psci_stage_mark(0x18u);
-		psci_cpu_tramp_trace[2] = 0x18u;
-	}
+	writel(0u, PSCI_NS_STAGE_PHYS);
+
+	psci_cpu_entry_phys[core] = PSCI_NS_STUB_PHYS;
 
 	writel((uint32_t)(uintptr_t)&psci_cpu_secure_entry, SUNXI_CPU_SOFT_ENTRY_REG);
-
-	UNUSED_DEBUG uint32_t soft_entry = readl(SUNXI_CPU_SOFT_ENTRY_REG);
-
-	debug("PSCI: CPU%" PRIu32 " soft-entry=0x%08" PRIx32
-	      " entry=0x%08" PRIx32 " ctx=0x%08" PRIx32 "\r\n",
-	      core, soft_entry, entry_phys, context_id);
 
 	/* Hold core in reset while preparing hand-off (matches U-Boot flow) */
 	clrbits(SUNXI_CPUCFG_C0_RST_CTRL, BIT(core));
 	dsb();
 	isb();
-	if (context_id == PSCI_SELFTEST_CONTEXT_NS) {
-		psci_stage_mark(0x1au);
-		psci_cpu_tramp_trace[2] = 0x1au;
-	}
-
+	
 	/* Invalidate L1 cache by clearing CTRL_REG0 bit (R528 semantics) */
 	clrbits(SUNXI_CPUCFG_C0_CTRL_REG0, BIT(core));
 	dsb();
 	isb();
-	if (context_id == PSCI_SELFTEST_CONTEXT_NS) {
-		psci_stage_mark(0x1bu);
-		psci_cpu_tramp_trace[2] = 0x1bu;
-	}
-
 	/* Ensure core power domain is ready (matches earlier bring-up flow) */
 	sunxi_cpu_enable_power(cluster, core);
 	clrbits(SUNXI_POWEROFF_GATING_REG(cluster), BIT(core));
@@ -424,51 +713,40 @@ static int32_t psci_do_cpu_on(uint32_t target_affinity, uint32_t entry_point,
 	setbits(SUNXI_CPUCFG_DBG_REG0, BIT(core));
 	dsb();
 	isb();
-	if (context_id == PSCI_SELFTEST_CONTEXT_NS) {
-		psci_stage_mark(0x1cu);
-		psci_cpu_tramp_trace[2] = 0x1cu;
-	}
-
 	/* Ensure CPU will come up in AArch32 */
 	clrbits(SUNXI_CPUCFG_GEN_CTRL_REG0, SUNXI_AARCH_CTRL_BIT(core));
 
 	setbits(SUNXI_CPUCFG_C0_RST_CTRL, BIT(core));
-	if (context_id == PSCI_SELFTEST_CONTEXT_NS) {
-		psci_stage_mark(0x1du);
-		psci_cpu_tramp_trace[2] = 0x1du;
-	}
-
-    UNUSED_DEBUG uint32_t rst = readl(SUNXI_CPUCFG_C0_RST_CTRL);
-    UNUSED_DEBUG uint32_t ctrl = readl(SUNXI_CPUCFG_C0_CTRL_REG0);
-    UNUSED_DEBUG uint32_t dbg = readl(SUNXI_CPUCFG_DBG_REG0);
-    UNUSED_DEBUG uint32_t status = readl(SUNXI_CPUCFG_C0_CPU_STATUS_REG);
-
-    UNUSED_DEBUG uint32_t por = readl(SUNXI_POWERON_RST_REG(cluster));
-    UNUSED_DEBUG uint32_t gate = readl(SUNXI_POWEROFF_GATING_REG(cluster));
-    UNUSED_DEBUG uint32_t clamp = readl(SUNXI_CPU_POWER_CLAMP_REG(cluster, core));
-
-	debug("PSCI: CPU%" PRIu32 " rst=0x%08" PRIx32 " ctrl0=0x%08" PRIx32
-	      " dbg=0x%08" PRIx32 " status=0x%08" PRIx32 " por=0x%08" PRIx32
-	      " gate=0x%08" PRIx32 " clamp=0x%02" PRIx32 "\r\n",
-	      core, rst, ctrl, dbg, status, por, gate, clamp & 0xffu);
-
-	debug("PSCI: CPU%" PRIu32 " tramp entry=0x%08" PRIx32
-	      " ctx=0x%08" PRIx32 " stage=0x%08" PRIx32 "\r\n",
-	      core, psci_cpu_tramp_trace[0],
-	      psci_cpu_tramp_trace[1],
-	      psci_cpu_tramp_trace[2]);
-	if (context_id == PSCI_SELFTEST_CONTEXT_NS) {
-		psci_stage_mark(0x1eu);
-		psci_cpu_tramp_trace[2] = 0x1eu;
-	}
-
 	dsb();
 	isb();
-	if (context_id == PSCI_SELFTEST_CONTEXT_NS) {
-		psci_stage_mark(0x1fu);
-		psci_cpu_tramp_trace[2] = 0x1fu;
-	}
+
 	__asm__ __volatile__("sev" ::: "memory");
+
+	uint32_t stage = psci_wait_for_stage_nonzero(200u);
+	if (stage == 0u) {
+		error("PSCI: CPU%u stage did not start within 200us (entry=0x%08" PRIx32 ")\r\n",
+		      (unsigned int)core, entry_phys);
+	} else {
+		psci_log_stage_snapshot("stage", core, stage);
+	}
+	const uintptr_t entry_lit_phys = PSCI_NS_STUB_PHYS +
+		((uintptr_t)psci_ns_stub_entry_lit - (uintptr_t)psci_ns_stub_start);
+	uint32_t stage_final = psci_wait_for_stage_at_least(0x53u, 500u);
+	if (stage_final >= 0x53u) {
+		psci_log_stage_snapshot("stage final", core, stage_final);
+#if PSCI_TRACE_ENABLE
+		const uint32_t trace_last = read32(PSCI_NS_TRACE_PHYS);
+		PSCI_TRACE_DEBUG("PSCI: CPU%u trace last=0x%08" PRIx32 "\r\n",
+				 (unsigned int)core, trace_last);
+#endif
+	} else {
+		const uint32_t entry_lit_debug = read32(entry_lit_phys);
+		error("PSCI: CPU%u stage failed to reach 0x53 (last=0x%08" PRIx32
+		      ", entry_lit=0x%08" PRIx32 ")\r\n",
+		      (unsigned int)core, stage_final, entry_lit_debug);
+	}
+
+	psci_log_monitor_diag();
 
 	psci_cpu_states[core] = PSCI_AFFINITY_ON;
 	return PSCI_RET_SUCCESS;
@@ -476,7 +754,7 @@ static int32_t psci_do_cpu_on(uint32_t target_affinity, uint32_t entry_point,
 
 static int32_t psci_do_cpu_off(void)
 {
-	const uint32_t mpidr = mpidr_read();
+	const uint32_t mpidr = arm32_read_mpidr();
 	const uint32_t core = mpidr & 0xffu;
 	const uint32_t cluster = (mpidr >> 8) & 0xffu;
 
@@ -543,144 +821,124 @@ static void psci_cpu1_manual_bringup(void)
 		      psci_cpu_states[1]);
 	}
 
-	const struct {
-		const char *label;
-		uint32_t entry;
-		uint32_t context;
-	} tests[] = {
-	{
-		.label = "secure self-test",
-		.entry = (uint32_t)(uintptr_t)&psci_cpu1_dummy_entry,
-		.context = PSCI_SELFTEST_CONTEXT_SEC,
-	},
-	{
-		.label = "non-secure handoff test",
-		.entry = SUNXI_SRAM_B_TRAMPOLINE + PSCI_TRAMP_NS_OFFSET,
-		.context = PSCI_SELFTEST_CONTEXT_NS,
-	},
-};
+	const char *label = "non-secure handoff test";
+	psci_selftest_prepare_environment();
+	const uint32_t entry = psci_selftest_entry_phys();
+	const uint32_t ctx = PSCI_SELFTEST_CONTEXT_NS;
 
-	for (uint32_t idx = 0u; idx < (uint32_t)(sizeof(tests) / sizeof(tests[0])); ++idx) {
-		const char *label = tests[idx].label;
-		const uint32_t entry = tests[idx].entry;
-		const uint32_t ctx = tests[idx].context;
+	psci_cpu1_probe_magic = 0u;
+	psci_cpu1_probe_counter = 0u;
+	psci_cpu1_probe_mpidr = 0u;
+	psci_cpu1_probe_cpsr = 0u;
+	writel(0u, PSCI_NS_DIAG_PHYS + 0u);
+	writel(0u, PSCI_NS_DIAG_PHYS + 4u);
+	writel(0u, PSCI_NS_DIAG_PHYS + 8u);
+	writel(0u, PSCI_NS_STAGE_PHYS);
+	writel(0xdeadbeefu, PSCI_NS_TEST_PHYS);
+	writel(0u, PSCI_NS_TRACE_PHYS);
+	dsb();
+	isb();
 
-		psci_cpu1_probe_magic = 0u;
-		psci_cpu1_probe_counter = 0u;
-		psci_cpu1_probe_mpidr = 0u;
-		psci_cpu1_probe_cpsr = 0u;
-		if (ctx == PSCI_SELFTEST_CONTEXT_NS) {
-			writel(0u, PSCI_NS_DIAG_PHYS + 0u);
-			writel(0u, PSCI_NS_DIAG_PHYS + 4u);
-			writel(0u, PSCI_NS_DIAG_PHYS + 8u);
-			writel(0u, PSCI_NS_STAGE_PHYS);
-			writel(0xdeadbeefu, PSCI_NS_SRAM_TEST_PHYS);
-			writel(0u, PSCI_NS_TRACE_PHYS);
-			dsb();
-			isb();
-			psci_stage_mark(0x08u);
-			psci_cpu_tramp_trace[2] = 0x08u;
-		}
+	const int32_t ret = psci_smc_call(PSCI_0_2_FN_CPU_ON, 1u, entry, ctx);
 
-		const int32_t ret = psci_do_cpu_on(1u, entry, ctx);
-
-		if (ret != PSCI_RET_SUCCESS) {
-			fatal("PSCI: CPU1 %s failed -> %" PRId32 "\r\n",
-			      label, ret);
-		}
-
-		bool cpu1_alive = false;
-		for (uint32_t wait = 0u; wait < 500000u; ++wait) {
-			if (psci_cpu1_probe_magic == PSCI_CPU1_PROBE_MAGIC) {
-				const uint32_t UNUSED_DEBUG counter = psci_cpu1_probe_counter;
-				const uint32_t UNUSED_DEBUG mpidr = psci_cpu1_probe_mpidr;
-				const uint32_t UNUSED_DEBUG cpsr = psci_cpu1_probe_cpsr;
-				debug("PSCI: CPU1 %s alive (mpidr=0x%08" PRIx32
-				      ", counter=%" PRIu32 " cpsr=0x%08" PRIx32 ")\r\n",
-				      label, mpidr, counter, cpsr);
-				cpu1_alive = true;
-				break;
-			}
-
-			__asm__ __volatile__("nop");
-		}
-
-		if (!cpu1_alive) {
-			if (ctx == PSCI_SELFTEST_CONTEXT_NS) {
-				uint32_t UNUSED_DEBUG diag_cnt = readl(PSCI_NS_DIAG_PHYS + 0u);
-				uint32_t UNUSED_DEBUG diag_mpidr = readl(PSCI_NS_DIAG_PHYS + 4u);
-				uint32_t UNUSED_DEBUG diag_cpsr = readl(PSCI_NS_DIAG_PHYS + 8u);
-				uint32_t UNUSED_DEBUG diag_stage = readl(PSCI_NS_STAGE_PHYS);
-				uint32_t UNUSED_DEBUG diag_trace = readl(PSCI_NS_TRACE_PHYS);
-				debug("PSCI: CPU1 %s diag cnt=%" PRIu32 " mpidr=0x%08" PRIx32
-				      " cpsr=0x%08" PRIx32 " stage=0x%08" PRIx32
-				      " trace=0x%08" PRIx32 "\r\n",
-				      label, diag_cnt, diag_mpidr, diag_cpsr, diag_stage, diag_trace);
-				debug("PSCI: CPU1 %s probe magic=0x%08" PRIx32
-				      " mpidr=0x%08" PRIx32 " cpsr=0x%08" PRIx32 "\r\n",
-				      label, psci_cpu1_probe_magic,
-				      psci_cpu1_probe_mpidr,
-				      psci_cpu1_probe_cpsr);
-				uint32_t mon_reason_raw = psci_monitor_diag[0];
-				uint32_t mon_reason = mon_reason_raw & 0xffu;
-				if (mon_reason_raw != PSCI_MONITOR_REASON_NONE) {
-					const char *mon_name = psci_monitor_reason_name(mon_reason);
-					uint32_t mon_spsr = psci_monitor_diag[1];
-					uint32_t mon_lr = psci_monitor_diag[2];
-					uint32_t mon_ifsr = psci_monitor_diag[3];
-					uint32_t mon_ifar = psci_monitor_diag[4];
-					uint32_t mon_dfsr = psci_monitor_diag[5];
-					uint32_t mon_dfar = psci_monitor_diag[6];
-					uint32_t mon_mpidr = psci_monitor_diag[7];
-					uint32_t mon_ifsr_fs = ((mon_ifsr & 0x3fu) | ((mon_ifsr >> 6) & 0x40u));
-					uint32_t mon_dfsr_fs = ((mon_dfsr & 0x3fu) | ((mon_dfsr >> 6) & 0x40u));
-					debug("PSCI: monitor %s fault reason(raw)=0x%08" PRIx32
-					      " reason=0x%02" PRIx32
-					      " spsr=0x%08" PRIx32 " lr=0x%08" PRIx32
-					      " ifsr=0x%08" PRIx32 " fs=0x%02" PRIx32
-					      " ifar=0x%08" PRIx32
-					      " dfsr=0x%08" PRIx32 " fs=0x%02" PRIx32
-					      " dfar=0x%08" PRIx32
-					      " mpidr=0x%08" PRIx32 "\r\n",
-					      mon_name, mon_reason_raw, mon_reason,
-					      mon_spsr, mon_lr,
-					      mon_ifsr, mon_ifsr_fs,
-					      mon_ifar,
-					      mon_dfsr, mon_dfsr_fs,
-					      mon_dfar,
-					      mon_mpidr);
-				}
-			}
-			debug("PSCI: CPU1 %s trace entry=0x%08" PRIx32
-		      " ctx=0x%08" PRIx32 " stage=0x%08" PRIx32 "\r\n",
-			      label, psci_cpu_tramp_trace[0],
-			      psci_cpu_tramp_trace[1],
-			      psci_cpu_tramp_trace[2]);
-			fatal("PSCI: CPU1 %s entry=0x%08" PRIx32
-			      " probe failed\r\n",
-			      label, entry);
-		}
-
-		/* Park CPU1 back into reset so PSCI flow can own it again */
-		clrbits(SUNXI_CPUCFG_C0_RST_CTRL, BIT(1u));
-		clrbits(SUNXI_CPUCFG_DBG_REG0, BIT(1u));
-		setbits(SUNXI_CPUCFG_C0_CTRL_REG0, BIT(1u));
-		writel(0u, SUNXI_CPU_SOFT_ENTRY_REG);
-		udelay(1);
-		dsb();
-		isb();
-
-		psci_cpu_states[1] = PSCI_AFFINITY_OFF;
-
-		UNUSED_DEBUG uint32_t rst = readl(SUNXI_CPUCFG_C0_RST_CTRL);
-		UNUSED_DEBUG uint32_t ctrl = readl(SUNXI_CPUCFG_C0_CTRL_REG0);
-		UNUSED_DEBUG uint32_t dbg = readl(SUNXI_CPUCFG_DBG_REG0);
-
-		debug("PSCI: CPU1 %s complete, reset re-asserted "
-		      "(rst=0x%08" PRIx32 " ctrl0=0x%08" PRIx32
-		      " dbg=0x%08" PRIx32 ")\r\n",
-		      label, rst, ctrl, dbg);
+	if (ret != PSCI_RET_SUCCESS) {
+		fatal("PSCI: CPU1 %s failed -> %" PRId32 "\r\n",
+					label, ret);
 	}
+
+	bool cpu1_alive = false;
+	uint64_t start = time_ms();
+	while (time_ms() - start < 10u) {
+		if (psci_cpu1_probe_magic == PSCI_CPU1_PROBE_MAGIC) {
+#if PSCI_TRACE_ENABLE
+			const uint32_t counter = psci_cpu1_probe_counter;
+			const uint32_t mpidr = psci_cpu1_probe_mpidr;
+			const uint32_t cpsr = psci_cpu1_probe_cpsr;
+			PSCI_TRACE_DEBUG("PSCI: CPU1 %s alive (mpidr=0x%08" PRIx32
+					 ", counter=%" PRIu32 " cpsr=0x%08" PRIx32 ")\r\n",
+					 label, mpidr, counter, cpsr);
+#endif
+			cpu1_alive = true;
+			break;
+		}
+
+		udelay(10);
+	}
+
+	if (!cpu1_alive) {
+#if PSCI_TRACE_ENABLE
+		const uint32_t diag_cnt = read32(PSCI_NS_DIAG_PHYS + 0u);
+		const uint32_t diag_mpidr = read32(PSCI_NS_DIAG_PHYS + 4u);
+		const uint32_t diag_cpsr = read32(PSCI_NS_DIAG_PHYS + 8u);
+		const uint32_t diag_stage = read32(PSCI_NS_STAGE_PHYS);
+		const uint32_t diag_trace = read32(PSCI_NS_TRACE_PHYS);
+		PSCI_TRACE_DEBUG("PSCI: CPU1 %s diag cnt=%" PRIu32 " mpidr=0x%08" PRIx32
+				 " cpsr=0x%08" PRIx32 " stage=0x%08" PRIx32
+				 " trace=0x%08" PRIx32 "\r\n",
+				 label, diag_cnt, diag_mpidr, diag_cpsr, diag_stage, diag_trace);
+		PSCI_TRACE_DEBUG("PSCI: CPU1 %s probe magic=0x%08" PRIx32
+				 " mpidr=0x%08" PRIx32 " cpsr=0x%08" PRIx32 "\r\n",
+				 label, psci_cpu1_probe_magic,
+				 psci_cpu1_probe_mpidr,
+				 psci_cpu1_probe_cpsr);
+		uint32_t mon_reason_raw = psci_monitor_diag[0];
+		uint32_t mon_reason = mon_reason_raw & 0xffu;
+		if (mon_reason_raw != PSCI_MONITOR_REASON_NONE) {
+			const char *mon_name = psci_monitor_reason_name(mon_reason);
+			uint32_t mon_spsr = psci_monitor_diag[1];
+			uint32_t mon_lr = psci_monitor_diag[2];
+			uint32_t mon_ifsr = psci_monitor_diag[3];
+			uint32_t mon_ifar = psci_monitor_diag[4];
+			uint32_t mon_dfsr = psci_monitor_diag[5];
+			uint32_t mon_dfar = psci_monitor_diag[6];
+			uint32_t mon_mpidr = psci_monitor_diag[7];
+			uint32_t mon_ifsr_fs = ((mon_ifsr & 0x3fu) | ((mon_ifsr >> 6) & 0x40u));
+			uint32_t mon_dfsr_fs = ((mon_dfsr & 0x3fu) | ((mon_dfsr >> 6) & 0x40u));
+			PSCI_TRACE_DEBUG("PSCI: monitor %s fault reason(raw)=0x%08" PRIx32
+					 " reason=0x%02" PRIx32
+					 " spsr=0x%08" PRIx32 " lr=0x%08" PRIx32
+					 " ifsr=0x%08" PRIx32 " fs=0x%02" PRIx32
+					 " ifar=0x%08" PRIx32
+					 " dfsr=0x%08" PRIx32 " fs=0x%02" PRIx32
+					 " dfar=0x%08" PRIx32
+					 " mpidr=0x%08" PRIx32 "\r\n",
+					 mon_name, mon_reason_raw, mon_reason,
+					 mon_spsr, mon_lr,
+					 mon_ifsr, mon_ifsr_fs,
+					 mon_ifar,
+					 mon_dfsr, mon_dfsr_fs,
+					 mon_dfar,
+					 mon_mpidr);
+		}
+#endif
+		fatal("PSCI: CPU1 %s entry=0x%08" PRIx32
+					" probe failed\r\n",
+					label, entry);
+	}
+
+	psci_selftest_validate_environment();
+
+	/* Park CPU1 back into reset so PSCI flow can own it again */
+	clrbits(SUNXI_CPUCFG_C0_RST_CTRL, BIT(1u));
+	clrbits(SUNXI_CPUCFG_DBG_REG0, BIT(1u));
+	setbits(SUNXI_CPUCFG_C0_CTRL_REG0, BIT(1u));
+	writel(0u, SUNXI_CPU_SOFT_ENTRY_REG);
+	udelay(1);
+	dsb();
+	isb();
+
+	psci_cpu_states[1] = PSCI_AFFINITY_OFF;
+
+#if PSCI_TRACE_ENABLE
+	const uint32_t rst = read32(SUNXI_CPUCFG_C0_RST_CTRL);
+	const uint32_t ctrl = read32(SUNXI_CPUCFG_C0_CTRL_REG0);
+	const uint32_t dbg = read32(SUNXI_CPUCFG_DBG_REG0);
+
+	PSCI_TRACE_DEBUG("PSCI: CPU1 %s complete, reset re-asserted "
+			 "(rst=0x%08" PRIx32 " ctrl0=0x%08" PRIx32
+			 " dbg=0x%08" PRIx32 ")\r\n",
+			 label, rst, ctrl, dbg);
+#endif
 }
 #else
 static inline void psci_cpu1_manual_bringup(void)
@@ -694,25 +952,23 @@ void psci_init(void)
 
 	sunxi_r_cpucfg_enable();
 
-	debug("PSCI: monitor vectors @0x%08" PRIx32 "\r\n", mvbar);
-	__asm__ __volatile__("mcr p15, 0, %0, c12, c0, 1" : : "r"(mvbar) : "memory");
+	PSCI_TRACE_DEBUG("PSCI: monitor vectors @0x%08" PRIx32 "\r\n", mvbar);
+	arm32_write_mvbar(mvbar);
 	dsb();
 	isb();
-    UNUSED_INFO uint32_t mvbar_chk;
-    __asm__ __volatile__("mrc p15, 0, %0, c12, c0, 1" : "=r"(mvbar_chk));
-    debug("PSCI: mvbar readback 0x%08" PRIx32 "\r\n", mvbar_chk);
+	PSCI_TRACE_DEBUG("PSCI: mvbar readback 0x%08" PRIx32 "\r\n", arm32_read_mvbar());
 
 #if PSCI_CPU_SELFTEST
-    psci_cpu1_manual_bringup();
+		psci_cpu1_manual_bringup();
 #endif
 }
 
 int32_t psci_handle_smc(uint32_t fid, uint32_t arg0, uint32_t arg1, uint32_t arg2)
 {
-    UNUSED_DEBUG uint32_t count = ++psci_smc_count;
 	int32_t ret;
 
 	switch (fid) {
+#if PSCI_CPU_SELFTEST
 	case PSCI_SELFTEST_NS_FID:
 		psci_cpu1_probe_magic = PSCI_CPU1_PROBE_MAGIC;
 		psci_cpu1_probe_mpidr = arg0;
@@ -720,7 +976,7 @@ int32_t psci_handle_smc(uint32_t fid, uint32_t arg0, uint32_t arg1, uint32_t arg
 		psci_cpu1_probe_counter = arg2;
 		ret = PSCI_RET_SUCCESS;
 		break;
-
+#endif
 	case PSCI_0_2_FN_PSCI_VERSION:
 		ret = (int32_t)PSCI_VERSION_1_0;
 		break;
@@ -770,8 +1026,12 @@ int32_t psci_handle_smc(uint32_t fid, uint32_t arg0, uint32_t arg1, uint32_t arg
 			break;
 	}
 
-	debug("PSCI[%" PRIu32 "]: fid=0x%08" PRIx32 " a0=0x%08" PRIx32 " a1=0x%08" PRIx32 " -> %" PRId32 "\r\n",
-	      count, fid, arg0, arg1, ret);
+#if PSCI_TRACE_ENABLE
+	const uint32_t count = ++psci_smc_count;
+	PSCI_TRACE_DEBUG("PSCI[%" PRIu32 "]: fid=0x%08" PRIx32 " a0=0x%08" PRIx32
+			 " a1=0x%08" PRIx32 " -> %" PRId32 "\r\n",
+			 count, fid, arg0, arg1, ret);
+#endif
 
 	return ret;
 }

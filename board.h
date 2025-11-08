@@ -9,6 +9,10 @@
 #ifndef SDRAM_TOP
 #define SDRAM_TOP  0x48000000U
 #endif
+
+#define PSCI_NS_SHMEM_SIZE 0x00010000U
+#define PSCI_NS_SHMEM_BASE (SDRAM_TOP - PSCI_NS_SHMEM_SIZE)
+
 #include "sunxi_spi.h"
 #include "sunxi_usart.h"
 #include "sunxi_sdhci.h"
