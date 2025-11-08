@@ -151,7 +151,20 @@ int main(void)
 	}
 
 	memory_size = sunxi_dram_init();
-	info("DRAM init done: %" PRIu32 " MiB\r\n", memory_size >> 20);
+	const uint32_t dram_total = memory_size;
+	info("DRAM init done: %" PRIu32 " MiB\r\n", dram_total >> 20);
+
+	if (memory_size <= PSCI_NS_SHMEM_SIZE) {
+		fatal("PSCI: DRAM size 0x%08" PRIx32 " too small for shared memory\r\n",
+		      memory_size);
+	}
+
+	memory_size -= PSCI_NS_SHMEM_SIZE;
+	const uint32_t linux_mem_top = SDRAM_BASE + memory_size;
+	debug("PSCI: reserved top 0x%08" PRIx32 " bytes for NS trampoline (0x%08" PRIx32 "-0x%08" PRIx32 ")\r\n",
+	      (uint32_t)PSCI_NS_SHMEM_SIZE,
+	      (uint32_t)linux_mem_top,
+	      (uint32_t)SDRAM_TOP);
 
 	sunxi_security_setup();
 	arm32_enable_smp();
@@ -394,7 +407,7 @@ int main(void)
 #endif // CONFIG_SPI_NAND
 
 	// The kernel will reset WDG
-	sunxi_wdg_set(3);
+	sunxi_wdg_set(5);
 
 	// Check if we should still be running
 	if (!board_get_power_on()) {
@@ -415,18 +428,18 @@ int main(void)
 	if (strlen(cmd_line) > 0) {
 		debug("BOOT: args %s\r\n", cmd_line);
 		if (fdt_update_bootargs(image.dtb_dest, cmd_line)) {
-			fatal("BOOT: Failed to set boot args\r\n");
+			fatal("FDT: Failed to set boot args\r\n");
 		}
 	}
 
 	if (fdt_update_memory(image.dtb_dest, SDRAM_BASE, memory_size)) {
-		fatal("BOOT: Failed to set memory size\r\n");
+		fatal("FDT: Failed to set memory size\r\n");
 	} else {
-		debug("BOOT: Set memory size to 0x%" PRIx32 "\r\n", memory_size);
+		debug("FDT: Set memory size to 0x%" PRIx32 "\r\n", memory_size);
 	}
 
 	if ((image.initrd_size > 0U) && (image.initrd_dest == NULL)) {
-		image.initrd_dest = (u8 *)(SDRAM_TOP - image.initrd_size);
+		image.initrd_dest = (u8 *)(linux_mem_top - image.initrd_size);
 	}
 
 	if (image.initrd_size > 0U) {
@@ -441,6 +454,11 @@ int main(void)
 			fatal("BOOT: initrd range 0x%08" PRIx32 "-0x%08" PRIx32 " invalid\r\n",
 						(uint32_t)initrd_start, (uint32_t)initrd_end);
 		}
+		if ((uint32_t)initrd_end > linux_mem_top) {
+			fatal("BOOT: initrd range 0x%08" PRIx32 "-0x%08" PRIx32
+			      " overlaps PSCI reserved memory\r\n",
+			      (uint32_t)initrd_start, (uint32_t)initrd_end);
+		}
 
 		if ((CONFIG_INITRD_ALIGNMENT != 0U) &&
 			((initrd_start & (CONFIG_INITRD_ALIGNMENT - 1U)) != 0U)) {
@@ -450,11 +468,11 @@ int main(void)
 
 		if (fdt_update_initrd(image.dtb_dest, (uint32_t)image.initrd_dest,
 					(uint32_t)(image.initrd_dest + image.initrd_size))) {
-			fatal("BOOT: Failed to set initrd address\r\n");
+			fatal("FDT: Failed to set initrd address\r\n");
 		} else {
-	debug("BOOT: Set initrd to 0x%08" PRIx32 "->0x%08" PRIx32 "\r\n",
-						(uint32_t)image.initrd_dest,
-						(uint32_t)(image.initrd_dest + image.initrd_size));
+			debug("FDT: Set initrd to 0x%08" PRIx32 "->0x%08" PRIx32 "\r\n",
+								(uint32_t)image.initrd_dest,
+								(uint32_t)(image.initrd_dest + image.initrd_size));
 		}
 	} else {
 		image.initrd_dest = NULL;
@@ -468,24 +486,22 @@ int main(void)
 	}
 #endif
 
-	info("booting linux...\r\n");
-	board_set_led(LED_BOARD, 0);
-
 	debug("kernel entry=0x%08" PRIx32 "\r\n", (uint32_t)entry_point);
 	arm32_interrupt_disable();
-	arm32_mmu_disable();
-	arm32_dcache_disable();
-	arm32_icache_disable();
+	arm32_shutdown_caches_pre_ns();
 
 	if (image.dtb_dest != NULL) {
 		uint32_t dtb_magic = read32((uint32_t)(uintptr_t)image.dtb_dest);
-		debug("DTB @%p magic=0x%08" PRIx32 "\r\n", image.dtb_dest, dtb_magic);
+		debug("BOOT: DTB @%p magic=0x%08" PRIx32 "\r\n", image.dtb_dest, dtb_magic);
 		(void)dtb_magic;
 	}
 
+	info("BOOT: booting linux...\r\n");
+	board_set_led(LED_BOARD, 0);
+
 	kernel_entry = (void (*)(int, int, unsigned int))entry_point;
-	debug("PSCI: jumping to kernel @0x%08" PRIx32 " (NS SVC)\r\n",
-	     (uint32_t)entry_point);
+	debug("BOOT: jumping to kernel @0x%08" PRIx32 " (NS SVC)\r\n",
+			 (uint32_t)entry_point);
 	arm32_enter_nonsecure(kernel_entry, 0, 0, (unsigned int)image.dtb_dest);
 
 	fatal("kernel entry returned unexpectedly\r\n");

@@ -9,12 +9,14 @@
 #define  ARMV7_IRQ_MODE        0x12
 #define  ARMV7_SVC_MODE        0x13
 #define  ARMV7_MON_MODE        0x16
+#define  ARMV7_HYP_MODE        0x1a
 #define  ARMV7_ABT_MODE        0x17
 #define  ARMV7_UND_MODE        0x1b
 #define  ARMV7_SYSTEM_MODE     0x1f
 #define  ARMV7_MODE_MASK       0x1f
 #define  ARMV7_FIQ_MASK        0x40
 #define  ARMV7_IRQ_MASK        0x80
+#define  ARMV7_ABT_MASK        0x100
 
 #define PSCI_MON_REASON_UNDEF   0xE0
 #define PSCI_MON_REASON_PREFETCH 0xE1
@@ -36,13 +38,11 @@
 .extern arm32_fault_stub
 .extern psci_handle_smc
 .extern psci_ns_stage_phys_value
-.extern psci_cpu_tramp_trace
+
 
 
 .macro psci_monitor_log reason
-	ldr r0, =psci_cpu_tramp_trace
 	mov r1, #\reason
-	str r1, [r0, #8]
 	ldr r0, =psci_monitor_diag
 	str r1, [r0]
 	mrs r2, spsr_all
@@ -59,6 +59,10 @@
 	str r2, [r0, #24]
 	mrc p15, 0, r2, c0, c0, 5
 	str r2, [r0, #28]
+	mrc p15, 4, r2, c14, c0, 2
+	str r2, [r0, #32]
+	mrc p15, 4, r2, c5, c0, 4
+	str r2, [r0, #36]
 	ldr r0, =psci_ns_stage_phys_value
 	ldr r0, [r0]
 	str r1, [r0]
@@ -302,7 +306,7 @@ __vector_table_end:
 	.align 5
 	.globl psci_monitor_diag
 psci_monitor_diag:
-	.space 0x30		@ reason, spsr, lr, fsr/far snapshots
+	.space 0x40		@ reason, spsr, lr, fsr/far snapshots (+hyp info)
 psci_monitor_diag_end:
 
 .section .text
@@ -427,6 +431,27 @@ psci_smc_entry:
 	ldmia sp!, {r4-r7, lr}
 	movs pc, lr
 
+.align 3
+	.thumb
+	.thumb_func
+.globl arm32_shutdown_caches_pre_ns
+arm32_shutdown_caches_pre_ns:
+	bx pc
+	nop
+	.align 2
+	.arm
+arm32_shutdown_caches_pre_ns_arm:
+	push {r4, lr}
+	mrc p15, 0, r3, c1, c0, 0
+	bic r3, r3, #(1 << 0)    @ disable MMU
+	bic r3, r3, #(1 << 2)    @ disable dcache
+	bic r3, r3, #(1 << 12)   @ disable icache
+	mcr p15, 0, r3, c1, c0, 0
+	dsb sy
+	isb
+	pop {r4, lr}
+	bx lr
+
 	.align 3
 	.thumb
 	.thumb_func
@@ -437,9 +462,6 @@ arm32_enter_nonsecure:
 	.align 2
 	.arm
 arm32_enter_nonsecure_arm:
-	ldr r8, =psci_cpu_tramp_trace
-	mov r4, #0x30
-	str r4, [r8, #8]
 	ldr r6, =psci_ns_stage_phys_value
 	ldr r6, [r6]
 	mov r7, #0x30
@@ -452,14 +474,17 @@ arm32_enter_nonsecure_arm:
 	dsb sy
 	isb
 	mov r7, #0x33
-	str r7, [r8, #8]
+	str r7, [r6]
 	mrc p15, 0, r3, c1, c1, 0
 	bic r3, r3, #0x4a
 	orr r3, r3, #(0x31)
-	orr r3, r3, #(1 << 8) @ HCE enable
+	mrc p15, 0, r8, c0, c1, 1	@ ID_PFR1
+	mov r11, r8, lsr #4
+	and r11, r11, #0xf		@ virtualization support present?
+	@ Force hand-off in SVC: keep SCR.HCE cleared regardless of ID_PFR1.
 	mcr p15, 0, r3, c1, c1, 0
 	mov r7, #0x34
-	str r7, [r8, #8]
+	str r7, [r6]
 	@
 	@ Reset CNTVOFF when virtualization and the generic timer are present
 	@ so the first non-secure instruction does not take a synchronous abort.
@@ -477,13 +502,9 @@ arm32_enter_nonsecure_arm:
 1:
 	.endif
 	isb
-	mov r7, #0x35
-	str r7, [r8, #8]
 	@ copy secure SVC stack to non-secure SVC stack
 	mov r5, sp
 	mcr p15, 0, r5, c13, c0, 2
-	mov r7, #0x36
-	str r7, [r8, #8]
 	mov r4, r12
 	mov lr, r12
 	mov r3, #0
@@ -491,13 +512,12 @@ arm32_enter_nonsecure_arm:
 	tst r4, #1
 	orrne r5, r5, #(1 << 5)
 	orrne lr, lr, #1
-	mov r7, #0x37
-	str r7, [r8, #8]
 	mov r7, #0x31
 	str r7, [r6]
+	ldr r0, =psci_monitor_diag
+	str r5, [r0, #40]		@ record desired SPSR
+	str r11, [r0, #44]		@ record virtualization nibble
 	msr spsr_cxsf, r5
-	mov r7, #0x38
-	str r7, [r8, #8]
 	mov r7, #0x32
 	str r7, [r6]
 	movs pc, lr
