@@ -5,6 +5,7 @@
 #include "sunxi_wdg.h"
 #include "sdmmc.h"
 #include "arm32.h"
+#include "psci.h"
 #include "debug.h"
 #include "board.h"
 #include "barrier.h"
@@ -13,6 +14,9 @@
 #if CONFIG_BOOT_SPINAND
 #include "sunxi_dma.h"
 #endif
+#include <asm/armv7.h>
+#include <psci.h>
+#include <asm/secure.h>
 
 static bool range_in_sdram(uint32_t start, uint32_t size)
 {
@@ -64,7 +68,7 @@ static void apply_fel_mailboxes(image_info_t *img)
 	if (initrd_size != 0U) {
 		if (initrd_size > CONFIG_INITRAMFS_MAX_SIZE) {
 			fatal("FEL: initrd size %" PRIu32 " exceeds max %" PRIu32 "\r\n",
-			      initrd_size, (uint32_t)CONFIG_INITRAMFS_MAX_SIZE);
+						initrd_size, (uint32_t)CONFIG_INITRAMFS_MAX_SIZE);
 		}
 		if (initrd_start == 0U) {
 			fatal("FEL: initrd start missing\r\n");
@@ -76,21 +80,21 @@ static void apply_fel_mailboxes(image_info_t *img)
 		}
 		if (!range_in_sdram(initrd_start, initrd_size)) {
 			fatal("FEL: initrd 0x%08" PRIx32 "-0x%08" PRIx32 " outside SDRAM\r\n",
-			      initrd_start, (uint32_t)initrd_end_64);
+						initrd_start, (uint32_t)initrd_end_64);
 		}
 		if ((dtb_addr != 0U) && (initrd_end_64 > (uint64_t)dtb_addr)) {
 			fatal("FEL: initrd overlaps DTB (initrd end 0x%08" PRIx32 ", dtb @ 0x%08" PRIx32 ")\r\n",
-			      (uint32_t)initrd_end_64, dtb_addr);
+						(uint32_t)initrd_end_64, dtb_addr);
 		}
 		img->initrd_dest = (u8 *)initrd_start;
 		img->initrd_size = initrd_size;
 	}
 
 	info("FEL: kernel@0x%08" PRIx32 " dtb@0x%08" PRIx32 " initrd@0x%08" PRIx32 " (%" PRIu32 " bytes)\r\n",
-	     (uint32_t)(uintptr_t)img->kernel_dest,
-	     (uint32_t)(uintptr_t)img->dtb_dest,
-	     (uint32_t)(uintptr_t)img->initrd_dest,
-	     (uint32_t)(uintptr_t)img->initrd_size);
+			 (uint32_t)(uintptr_t)img->kernel_dest,
+			 (uint32_t)(uintptr_t)img->dtb_dest,
+			 (uint32_t)(uintptr_t)img->initrd_dest,
+			 (uint32_t)(uintptr_t)img->initrd_size);
 }
 #endif
 
@@ -117,9 +121,25 @@ static int boot_image_setup(unsigned char *addr, unsigned int *entry)
 	return -1;
 }
 
+static void boot_linux_psci(void (*kernel_entry)(int zero, int arch,
+							unsigned int params),
+					unsigned long machid, unsigned long fdt_addr)
+{
+	void (*nonsec_entry)(void *target_pc, unsigned long r0,
+					 unsigned long r1, unsigned long r2);
+
+	if (armv7_init_nonsec()) {
+		fatal("PSCI: armv7_init_nonsec() failed\r\n");
+	}
+
+	nonsec_entry = secure_ram_addr(_do_nonsec_entry);
+	nonsec_entry((void *)kernel_entry, 0, machid, fdt_addr);
+}
+
 int main(void)
 {
 	unsigned int entry_point = 0;
+	void (*kernel_entry)(int zero, int arch, unsigned int params);
 	uint32_t	 memory_size;
 	uint32_t	 wait		 = 0;
 	uint8_t		 btn_led_val = false;
@@ -150,8 +170,6 @@ int main(void)
 
 	memory_size = sunxi_dram_init();
 	info("DRAM init done: %" PRIu32 " MiB\r\n", memory_size >> 20);
-
-	void (*kernel_entry)(int zero, int arch, unsigned int params);
 
 #ifdef CONFIG_ENABLE_CPU_FREQ_DUMP
 	sunxi_clk_dump();
@@ -412,10 +430,15 @@ int main(void)
 		}
 	}
 
-	if (fdt_update_memory(image.dtb_dest, SDRAM_BASE, memory_size)) {
+	const uint32_t usable_memory_size = memory_size - CONFIG_PSCI_DRAM_RESERVE;
+	if (memory_size <= CONFIG_PSCI_DRAM_RESERVE) {
+		fatal("BOOT: invalid memory size %" PRIu32 "\r\n", memory_size);
+	}
+	if (fdt_update_memory(image.dtb_dest, SDRAM_BASE, usable_memory_size)) {
 		fatal("BOOT: Failed to set memory size\r\n");
 	} else {
-		debug("BOOT: Set memory size to 0x%" PRIx32 "\r\n", memory_size);
+		debug("BOOT: Set memory size to 0x%" PRIx32 " (reserve 0x%" PRIx32 ")\r\n",
+					usable_memory_size, (uint32_t)CONFIG_PSCI_DRAM_RESERVE);
 	}
 
 	if ((image.initrd_size > 0U) && (image.initrd_dest == NULL)) {
@@ -432,7 +455,7 @@ int main(void)
 
 		if (!range_in_sdram((uint32_t)initrd_start, image.initrd_size)) {
 			fatal("BOOT: initrd range 0x%08" PRIx32 "-0x%08" PRIx32 " invalid\r\n",
-			      (uint32_t)initrd_start, (uint32_t)initrd_end);
+						(uint32_t)initrd_start, (uint32_t)initrd_end);
 		}
 
 		if ((CONFIG_INITRD_ALIGNMENT != 0U) &&
@@ -446,8 +469,8 @@ int main(void)
 			fatal("BOOT: Failed to set initrd address\r\n");
 		} else {
 			debug("BOOT: Set initrd to 0x%08" PRIx32 "->0x%08" PRIx32 "\r\n",
-			      (uint32_t)image.initrd_dest,
-			      (uint32_t)(image.initrd_dest + image.initrd_size));
+						(uint32_t)image.initrd_dest,
+						(uint32_t)(image.initrd_dest + image.initrd_size));
 		}
 	} else {
 		image.initrd_dest = NULL;
@@ -470,7 +493,8 @@ int main(void)
 	arm32_interrupt_disable();
 
 	kernel_entry = (void (*)(int, int, unsigned int))entry_point;
-	kernel_entry(0, ~0, (unsigned int)image.dtb_dest);
+	boot_linux_psci(kernel_entry, ~0UL, (unsigned int)image.dtb_dest);
+	fatal("PSCI: boot_linux_psci returned unexpectedly\r\n");
 
 	return 0;
 }

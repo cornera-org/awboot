@@ -29,6 +29,7 @@
  */
 
 /* This file gets parsed by the preprocessor */
+#include "include/config.h"
 
 OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
 OUTPUT_ARCH(arm)
@@ -37,12 +38,12 @@ SEARCH_DIR(.)
 /* Memory Spaces Definitions */
 MEMORY
 {
-  ram   (rwx) : ORIGIN = __RAM_BASE, LENGTH = 96K /* A1 + DSP0 IRAM + DSP0 DRAM0. 128K on boot mode, 96K on FEL mode */
+  ram   (rwx) : ORIGIN = __RAM_BASE, LENGTH = 128K /* A1 + DSP0 IRAM + DSP0 DRAM0. 160K on boot mode, 128K on FEL mode */
   ddr   (rwx) : ORIGIN = 0x40000000, LENGTH = 128M
 }
 
 /* The stack size used by the application. NOTE: you need to adjust according to your application. */
-STACK_SIZE = 0x1000; /* 4KB */
+STACK_SIZE = 0x2000; /* 8KB */
 
 ENTRY(reset)
 
@@ -56,6 +57,20 @@ SECTIONS
     PROVIDE(__spl_start = .);
     *(.text .text.*)
     . = ALIGN(4);
+    } > ram
+
+    .secure_text :
+    {
+    . = ALIGN(4);
+    __secure_start = .;
+    * (._secure.text)
+    . = ALIGN(4);
+    } > ram
+
+    .secure_data :
+    {
+    * (._secure.data)
+    __secure_end = .;
     } > ram
 
     . = ALIGN(4);
@@ -78,6 +93,15 @@ SECTIONS
         *(COMMON)
         . = ALIGN(4);
         _ebss = . ;
+    } > ram
+
+    .psci_stack (NOLOAD) :
+    {
+        . = ALIGN(4);
+        __secure_stack_start = .;
+        . = . + (CONFIG_ARMV7_PSCI_NR_CPUS * (1 << 10));
+        . = ALIGN(4);
+        __secure_stack_end = .;
     } > ram
 
     .stack (NOLOAD):
