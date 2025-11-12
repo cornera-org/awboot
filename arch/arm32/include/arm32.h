@@ -138,6 +138,20 @@ static inline void arm32_icache_disable(void)
 	arm32_write_p15_c1(value & ~(1 << 12));
 }
 
+static inline uint32_t arm32_read_p15_c3(void)
+{
+	uint32_t value;
+
+	__asm__ __volatile__("mrc p15, 0, %0, c3, c0, 0" : "=r"(value));
+
+	return value;
+}
+
+static inline void arm32_write_p15_c3(uint32_t value)
+{
+	__asm__ __volatile__("mcr p15, 0, %0, c3, c0, 0" : : "r"(value));
+}
+
 void arm32_invalidate_icache_btb(void);
 void arm32_enter_nonsecure(void (*entry)(int, int, unsigned int),
                            unsigned int arg0, unsigned int arg1, unsigned int arg2);

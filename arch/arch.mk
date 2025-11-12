@@ -13,6 +13,7 @@ LINUX_SYSTEM_MAP := $(LINUX_BUILD_DIR)/System.map
 ifneq ($(wildcard $(LINUX_SYSTEM_MAP)),)
 LINUX_SECONDARY_DATA_VIRT := $(strip $(shell awk '$$3=="secondary_data"{print $$1; exit}' $(LINUX_SYSTEM_MAP)))
 LINUX_SECONDARY_STARTUP_VIRT := $(strip $(shell awk '$$3=="secondary_startup"{print $$1; exit}' $(LINUX_SYSTEM_MAP)))
+LINUX_SECONDARY_KERNEL_VIRT := $(strip $(shell awk '$$3=="secondary_start_kernel"{print $$1; exit}' $(LINUX_SYSTEM_MAP)))
 LINUX_HYP_VECTORS_VIRT := $(strip $(shell awk '$$3=="__hyp_stub_vectors"{print $$1; exit}' $(LINUX_SYSTEM_MAP)))
 ifneq ($(LINUX_SECONDARY_DATA_VIRT)$(LINUX_SECONDARY_STARTUP_VIRT),)
 PSCI_LINUX_SECONDARY_DATA_OFFSET := $(strip $(shell printf "0x%X" $$((0x$(LINUX_SECONDARY_DATA_VIRT) - 0x$(LINUX_SECONDARY_STARTUP_VIRT)))))
@@ -33,6 +34,7 @@ endif
 ASRCS	+=  $(SOC)/start.S
 ASRCS	+=  $(SOC)/memcpy.S
 ASRCS	+=  $(SOC)/psci_tramp.S
+ASRCS	+=  $(SOC)/psci_monitor_vectors_ns.S
 
 ifneq ($(wildcard $(SOC)/dram_sun20i_d1.c),)
 SRCS	+=  $(SOC)/dram_sun20i_d1.c

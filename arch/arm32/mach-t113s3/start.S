@@ -26,6 +26,9 @@
 #define PSCI_MON_REASON_RESET   0xE5
 
 #ifndef MACH_T113S3_HAS_VIRTUAL_COUNTER
+/* CNTVOFF writes trap to monitor on T113 unless we temporarily drop NS via SCR.
+ * Leave the slow path disabled until we add the proper hand-off shim.
+ */
 #define MACH_T113S3_HAS_VIRTUAL_COUNTER 0
 #endif
 
@@ -70,6 +73,8 @@
 	isb
 .endm
 
+#define PSCI_NS_TRACE_PHYS    (0x47ff0030)
+
 .section .monitor_vectors, "ax", %progbits
 	.align 5
 .globl psci_monitor_vector_table
@@ -88,6 +93,35 @@ psci_monitor_reset_handler:
 	b .
 
 psci_monitor_undef_handler:
+	sub	sp, sp, #16
+	stmia	sp, {r0 - r3}
+	ldr	r0, =PSCI_NS_TRACE_PHYS
+	ldr	r1, [sp]			@ original r0 from NS world
+	cmp	r1, #0
+	bne	0f
+	ldr	r1, [r0, #0x18]		@ saved SCTLR value
+	cmp	r1, #0
+	bne	0f
+	ldr	r1, [r0, #0x24]		@ fallback to enable_entry snapshot
+0:
+	mov	r2, r1
+	cmp	r2, #0
+	beq	1f
+	mcr	p15, 0, r2, c1, c0, 0
+	dsb	sy
+	isb
+	mov	r1, #0x76
+	str	r1, [r0]
+	mov	r1, #0xe5
+	str	r1, [r0, #0x2c]
+	ldmia	sp, {r0 - r3}
+	add	sp, sp, #16
+	movs	pc, lr
+1:
+	mov	r1, #0xe6
+	str	r1, [r0, #0x2c]
+	ldmia	sp, {r0 - r3}
+	add	sp, sp, #16
 	psci_monitor_log PSCI_MON_REASON_UNDEF
 	b .
 
@@ -517,7 +551,6 @@ arm32_enter_nonsecure_arm:
 	ldr r0, =psci_monitor_diag
 	str r5, [r0, #40]		@ record desired SPSR
 	str r11, [r0, #44]		@ record virtualization nibble
-	msr spsr_cxsf, r5
 	mov r7, #0x32
 	str r7, [r6]
-	movs pc, lr
+	bx lr

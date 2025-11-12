@@ -11,9 +11,14 @@
 .extern psci_ns_diag_phys_value
 .extern psci_ns_linux_secondary_phys_value
 .extern psci_monitor_vector_table
+.extern psci_monitor_vector_table_ns
 .extern __stack_srv_end
 
 #define MON_STACK_SZ 0x200
+#define ARMV7_MODE_MASK        0x1f
+#define ARMV7_FIQ_MASK         0x40
+#define ARMV7_IRQ_MASK         0x80
+#define ARMV7_SVC_MODE         0x13
 
 psci_cpu_secure_entry:
 	mrc	p15, 0, r0, c0, c0, 5		@ r0 = MPIDR
@@ -29,10 +34,29 @@ psci_cpu_secure_entry:
 	mul	r6, r6, r8
 	add	r6, r6, #MON_STACK_SZ
 	sub	r5, r5, r6		@ unique monitor stack per core
-	mrs	r9, cpsr
-	cps	#0x16		@ switch to Monitor mode
+	/*
+	 * Stay in Monitor mode until we hand off to the non-secure world.
+	 * Linux expects CPU1 to arrive in NS SVC, so the final switch must
+	 * happen via Monitor -> NS, not SVC -> NS.
+	 */
+	cps	#0x16		@ switch to Monitor mode for NS hand-off
 	mov	sp, r5
-	msr	cpsr_c, r9		@ restore previous mode
+	mrc	p15, 0, r3, c1, c1, 0	@ SCR
+	bic	r3, r3, #0x4a		@ clear IRQ/FIQ routing and EA bits
+	orr	r3, r3, #0x31		@ enable NS | AW | FW
+	mrc	p15, 0, r10, c0, c1, 1	@ ID_PFR1
+	and	r10, r10, #(0xf << 12)	@ virtualization field present?
+	cmp	r10, #0
+	orrne	r3, r3, #0x100		@ allow HVC when virt ext available
+	mcr	p15, 0, r3, c1, c1, 0
+	isb
+	@ Allow NS world to access CP10/11 and SMP bits (NSACR is per-core)
+	mrc	p15, 0, r1, c1, c1, 2	@ NSACR
+	movw	r2, #0x3fff
+	movt	r2, #0x0004
+	orr	r1, r1, r2
+	mcr	p15, 0, r1, c1, c1, 2
+	isb
 	mov	r0, r8
 	ldr	r1, =psci_cpu_entry_phys
 	ldr	r2, [r1, r0, lsl #2]		@ r2 = target entry
@@ -44,11 +68,36 @@ psci_cpu_secure_entry:
 	beq	2f
 	mov	r7, #0x21
 	str	r7, [r6]
+	push	{r2}
 	mov	r0, r2
 	mov	r1, #0
 	mov	r2, #0
 	ldr	r4, =arm32_enter_nonsecure
 	blx	r4			@ jump to non-secure world
+	pop	{r11}
+	cpsid	aif
+	cps	#0x16			@ re-enter Monitor for final hand-off
+	mov	sp, r5
+	ldr	r7, =psci_monitor_vector_table_ns
+	mcr	p15, 0, r7, c12, c0, 1
+	dsb	sy
+	isb
+	mrc	p15, 0, r3, c1, c1, 0
+	bic	r3, r3, #0x4a
+	orr	r3, r3, #0x31
+	mrc	p15, 0, r10, c0, c1, 1
+	and	r10, r10, #(0xf << 12)
+	cmp	r10, #0
+	orrne	r3, r3, #0x100
+	mcr	p15, 0, r3, c1, c1, 0
+	isb
+	mov	r9, #(ARMV7_SVC_MODE | ARMV7_IRQ_MASK | ARMV7_FIQ_MASK)
+	tst	r11, #1
+	orrne	r9, r9, #(1 << 5)
+	orrne	r11, r11, #1
+	msr	spsr_cxsf, r9
+	mov	lr, r11
+	movs	pc, lr
 2:
 	b	2b			@ should never return
 
@@ -63,6 +112,8 @@ psci_cpu_secure_entry:
 .global psci_ns_stub_secdata_lit
 .global psci_ns_stub_context_lit
 .global psci_ns_stub_entry_lit
+.global psci_ns_sctlr_lit
+.global psci_ns_dacr_lit
 
 #define PSCI_SELFTEST_CONTEXT_NS 0xfffffffeu
 
@@ -156,7 +207,7 @@ psci_ns_stub_start:
 	str	r9, [r6]
 #endif
 	cmp	r7, #0
-	beq	4f
+	beq	psci_ns_stub_idle
 	mov	r9, #0xa3
 #if PSCI_TRACE_ENABLE
 	str	r9, [r6]
@@ -179,13 +230,11 @@ psci_ns_stub_start:
 	str	r9, [r6]
 #endif
 	str	r9, [r4]
-	mov	r0, #0
-	mov	r1, #0
-	mov	r2, #0
-	mov	r3, #0
-	bx	r7
-4:
-	b	4b
+	mov	r0, r7
+	bl	psci_ns_linux_direct_boot
+	b	psci_ns_stub_idle
+psci_ns_stub_idle:
+	b	psci_ns_stub_idle
 
 .align 2
 psci_ns_stub_diag_lit:
@@ -201,6 +250,10 @@ psci_ns_stub_secdata_lit:
 psci_ns_stub_context_lit:
 	.word	0
 psci_ns_stub_entry_lit:
+	.word	0
+psci_ns_sctlr_lit:
+	.word	0
+psci_ns_dacr_lit:
 	.word	0
 psci_ns_stub_end:
 .previous
@@ -290,3 +343,34 @@ psci_ns_linux_entry_trace_lit:
 	.word	0
 psci_ns_linux_entry_end:
 .previous
+psci_ns_linux_direct_boot:
+	cmp	r0, #0
+	beq	psci_ns_stub_idle
+	mov	r12, r0			@ entry pointer
+	ldr	r8, =psci_ns_stub_secdata_lit
+	ldr	r8, [r8]
+	cmp	r8, #0
+	beq	psci_ns_stub_idle
+	ldr	r2, [r8]			@ pgdir low
+	ldr	r3, [r8, #4]			@ pgdir high (ignored on 32-bit)
+	ldr	r4, [r8, #8]			@ swapper / TTBR1
+	ldr	r5, [r8, #12]			@ stack top
+	ldr	r6, [r8, #16]			@ task pointer
+	ldr	r7, =psci_ns_dacr_lit
+	ldr	r7, [r7]
+	ldr	r9, =psci_ns_sctlr_lit
+	ldr	r9, [r9]
+	cmp	r5, #0
+	beq	psci_ns_stub_idle
+	cmp	r6, #0
+	beq	psci_ns_stub_idle
+	mcr	p15, 0, r2, c2, c0, 0		@ TTBR0
+	mcr	p15, 0, r4, c2, c0, 1		@ TTBR1
+	mcr	p15, 0, r7, c3, c0, 0		@ DACR
+	mcr	p15, 0, r9, c1, c0, 0		@ SCTLR
+	dsb	sy
+	isb
+	mov	sp, r5
+	mov	r0, r6				@ task pointer for Linux
+	mov	fp, #0
+	bx	r12
