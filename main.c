@@ -359,7 +359,16 @@ int main(void)
 
 	apply_fel_mailboxes(&image);
 
-	strcpy(cmd_line, CONFIG_DEFAULT_BOOT_CMD);
+	// Keep the DTB's bootargs and mark this as a FEL/recovery boot.
+	if (fdt_get_bootargs(image.dtb_dest, cmd_line, sizeof(cmd_line)) != 0) {
+		strcpy(cmd_line, CONFIG_DEFAULT_BOOT_CMD);
+	}
+	size_t len = strlen(cmd_line);
+	if (len + 19 < sizeof(cmd_line)) {
+		strcat(cmd_line, " cornera.recovery=fel");
+	} else {
+		warning("BOOT: FEL cmdline too long for recovery marker\r\n");
+	}
 #endif
 
 #if CONFIG_BOOT_SDCARD || CONFIG_BOOT_MMC
@@ -418,10 +427,6 @@ int main(void)
 	if (boot_image_setup((unsigned char *)image.kernel_dest, &entry_point) != 0) {
 		fatal("boot setup failed\r\n");
 	}
-
-#if !CONFIG_BOOT_SPINAND && !CONFIG_BOOT_SDCARD && !CONFIG_BOOT_MMC
-	cmd_line[0] = '\0'; 
-#endif
 
 #if CONFIG_BOOT_SDCARD || CONFIG_BOOT_MMC
 	if (sd_boot_ready) {

@@ -517,6 +517,34 @@ int fdt_check_blob_valid(void *blob)
  * property "bootargs": This zero-terminated string is passed
  * as the kernel command line.
  */
+int fdt_get_bootargs(void *blob, char *bootargs, int buflen)
+{
+	int nodeoffset;
+	int property_offset;
+	unsigned int *plen;
+	char *value;
+	int len;
+
+	if (fdt_check_blob_valid(blob) || !bootargs || buflen <= 0)
+		return -1;
+
+	if (of_get_node_offset(blob, "chosen", &nodeoffset))
+		return -1;
+
+	if (of_get_property_offset_by_name(blob, nodeoffset, "bootargs", &property_offset))
+		return -1;
+
+	plen  = (unsigned int *)of_dt_struct_offset(blob, property_offset + 4);
+	value = (char *)of_dt_struct_offset(blob, property_offset + 12);
+	len   = swap_uint32(*plen);
+	if (len >= buflen)
+		len = buflen - 1;
+	_memcpy(bootargs, value, len);
+	bootargs[len] = '\0';
+
+	return 0;
+}
+
 int fdt_update_bootargs(void *blob, const char *bootargs)
 {
 	int nodeoffset;
