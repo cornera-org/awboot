@@ -100,7 +100,7 @@ static void apply_fel_mailboxes(image_info_t *img)
 
 image_info_t image;
 
-static char cmd_line[128] = {0};
+static char cmd_line[256] = {0};
 
 #if CONFIG_BOOT_SDCARD || CONFIG_BOOT_MMC
 static char	  filename[16];
@@ -421,6 +421,18 @@ int main(void)
 
 #if !CONFIG_BOOT_SPINAND && !CONFIG_BOOT_SDCARD && !CONFIG_BOOT_MMC
 	cmd_line[0] = '\0'; 
+#endif
+
+#if CONFIG_BOOT_SDCARD || CONFIG_BOOT_MMC
+	if (sd_boot_ready) {
+		// Tell Linux/RAUC which slot was booted (rauc.slot=<bootname>)
+		size_t len = strlen(cmd_line);
+		if (len + 16 < sizeof(cmd_line)) {
+			strcat(cmd_line, " rauc.slot=");
+			cmd_line[len + 11] = slot_name;
+			cmd_line[len + 12] = '\0';
+		}
+	}
 #endif
 
 	if (strlen(cmd_line) > 0) {
