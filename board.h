@@ -32,7 +32,7 @@
 #define CONFIG_MAIL_KERNEL_ADDR_ADDR   (CONFIG_FEL_MAILBOX_BASE + 0xCU)
 
 #define CONFIG_CONF_FILENAME	"boot.cfg"
-#define CONFIG_DEFAULT_BOOT_CMD "console=ttyS3,115200 earlycon"
+#define CONFIG_DEFAULT_BOOT_CMD "console=ttyS3,115200 earlycon cornera.recovery=fel"
 #define CONFIG_BOOT_MAX_TRIES	2
 
 /* Boot source configuration flags (1 = enabled) */
